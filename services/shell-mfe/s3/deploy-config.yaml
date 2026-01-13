@@ -1,0 +1,60 @@
+# S3 Deployment Configuration for Shell MFE
+# Used by mfe-promotion-pipeline.yml when deploying to S3
+
+# Bucket naming pattern (actual values from Terraform outputs)
+# dev: btg-dev-shell-blue / btg-dev-shell-green
+# staging: btg-staging-shell-blue / btg-staging-shell-green
+# prod: btg-prod-shell-blue / btg-prod-shell-green
+
+deployment:
+  # Files to exclude from deployment
+  exclude:
+    - "*.map"              # Source maps (only in dev)
+    - "*.spec.js"          # Test files
+    - ".DS_Store"          # macOS artifacts
+    - "thumbs.db"          # Windows artifacts
+  
+  # Content-Type overrides (beyond default MIME detection)
+  content_types:
+    "*.js": "application/javascript; charset=utf-8"
+    "*.mjs": "application/javascript; charset=utf-8"
+    "*.json": "application/json; charset=utf-8"
+    "*.wasm": "application/wasm"
+    "*.css": "text/css; charset=utf-8"
+    "*.html": "text/html; charset=utf-8"
+    "*.svg": "image/svg+xml"
+    "*.ico": "image/x-icon"
+    "*.woff2": "font/woff2"
+    "*.woff": "font/woff"
+  
+  # Cache-Control headers per file pattern
+  cache_control:
+    # Immutable hashed assets (1 year)
+    "*.{hash}.js": "public, max-age=31536000, immutable"
+    "*.{hash}.css": "public, max-age=31536000, immutable"
+    "*.{hash}.woff2": "public, max-age=31536000, immutable"
+    
+    # Runtime config (no cache - changes per deployment)
+    "config.json": "no-cache, no-store, must-revalidate"
+    "runtime-config.json": "no-cache, no-store, must-revalidate"
+    
+    # Index.html (short cache with revalidation)
+    "index.html": "public, max-age=300, must-revalidate"
+    
+    # Other assets (1 day)
+    "*": "public, max-age=86400"
+
+# Blue-Green deployment settings
+blue_green:
+  # Smoke test validation
+  smoke_test:
+    enabled: true
+    timeout: 30
+    expected_status: 200
+    endpoints:
+      - "/"  # Index page must load successfully
+  
+  # Rollback criteria
+  rollback:
+    on_smoke_test_fail: true
+    automatic: true

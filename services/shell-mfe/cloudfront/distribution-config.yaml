@@ -1,0 +1,152 @@
+# CloudFront Distribution Configuration for Shell MFE
+# Used by Terraform to configure CloudFront distributions
+
+distribution:
+  # Price class (geographic distribution)
+  price_class: "PriceClass_100"  # US, Canada, Europe (cheapest)
+  # Options: PriceClass_All, PriceClass_200 (add Asia), PriceClass_100
+  
+  # Default root object
+  default_root_object: "index.html"
+  
+  # Custom error responses (SPA routing)
+  custom_error_responses:
+    - error_code: 404
+      response_code: 200
+      response_page_path: "/index.html"
+      ttl: 300
+    - error_code: 403
+      response_code: 200
+      response_page_path: "/index.html"
+      ttl: 300
+  
+  # Viewer protocol policy
+  viewer_protocol_policy: "redirect-to-https"
+  
+  # SSL/TLS configuration
+  ssl:
+    minimum_protocol_version: "TLSv1.2_2021"
+    ssl_support_method: "sni-only"
+  
+  # Logging (optional, disabled by default for cost)
+  logging:
+    enabled: false
+    # bucket: "btg-cloudfront-logs"
+    # prefix: "shell-mfe/"
+  
+  # Compression
+  compress: true
+  
+  # HTTP versions
+  http_versions:
+    - "http2"
+    - "http3"
+
+# Cache behavior for different paths
+cache_behaviors:
+  # Default behavior (all paths)
+  default:
+    allowed_methods: ["GET", "HEAD", "OPTIONS"]
+    cached_methods: ["GET", "HEAD"]
+    compress: true
+    viewer_protocol_policy: "redirect-to-https"
+    
+    # Cache policy
+    cache_policy:
+      min_ttl: 0
+      default_ttl: 86400      # 1 day
+      max_ttl: 31536000       # 1 year
+      
+    # Cookies forwarding
+    forward_cookies: "none"
+    
+    # Query strings
+    forward_query_strings: false
+  
+  # Config files (no cache)
+  - path_pattern: "config*.json"
+    allowed_methods: ["GET", "HEAD", "OPTIONS"]
+    cached_methods: ["GET", "HEAD"]
+    viewer_protocol_policy: "redirect-to-https"
+    cache_policy:
+      min_ttl: 0
+      default_ttl: 0
+      max_ttl: 0
+    forward_cookies: "none"
+    forward_query_strings: false
+  
+  # Hashed assets (long cache)
+  - path_pattern: "*.{hash}.*"
+    allowed_methods: ["GET", "HEAD"]
+    cached_methods: ["GET", "HEAD"]
+    viewer_protocol_policy: "redirect-to-https"
+    cache_policy:
+      min_ttl: 31536000      # 1 year
+      default_ttl: 31536000
+      max_ttl: 31536000
+    forward_cookies: "none"
+    forward_query_strings: false
+
+# Security headers (ResponseHeadersPolicy)
+security_headers:
+  strict_transport_security:
+    access_control_max_age_sec: 63072000
+    include_subdomains: true
+    preload: true
+  
+  content_type_options:
+    override: true
+  
+  frame_options:
+    frame_option: "DENY"
+    override: true
+  
+  xss_protection:
+    mode_block: true
+    protection: true
+    override: true
+  
+  referrer_policy:
+    referrer_policy: "strict-origin-when-cross-origin"
+    override: true
+  
+  content_security_policy:
+    content_security_policy: >
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: https:;
+      font-src 'self' data:;
+      connect-src 'self' https://api-*.btg.com;
+      frame-ancestors 'none';
+    override: true
+
+# Invalidation patterns (CloudFront cache invalidation)
+invalidation:
+  # Paths to invalidate on every deployment
+  paths:
+    - "/*"  # Invalidate everything (simple approach)
+  
+  # Alternative: targeted invalidation (more complex, saves money)
+  # paths:
+  #   - "/index.html"
+  #   - "/config*.json"
+  #   - "/runtime-config.json"
+  #   - "/assets/config/*"
+
+# Environment-specific overrides
+environments:
+  dev:
+    compress: false  # Easier debugging
+    logging:
+      enabled: true
+  
+  staging:
+    # Use defaults
+  
+  production:
+    price_class: "PriceClass_200"  # Add Asia/Pacific
+    logging:
+      enabled: true
+      bucket: "btg-prod-cloudfront-logs"
+      prefix: "shell-mfe/"

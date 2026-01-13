@@ -1,0 +1,124 @@
+# ECS Service Definition for Gateway Service
+# Used by deployment pipeline to configure ECS service
+
+service:
+  name: "btg-gateway-service"
+  launch_type: "FARGATE"
+  platform_version: "LATEST"
+  
+  # Capacity configuration
+  desired_count: 2
+  
+  # Deployment configuration
+  deployment:
+    maximum_percent: 200
+    minimum_healthy_percent: 100
+    circuit_breaker:
+      enable: true
+      rollback: true
+  
+  # Network configuration
+  network:
+    assign_public_ip: false  # Private subnets with NAT Gateway
+    security_groups:
+      - "sg-gateway-service"
+    subnets:
+      - "subnet-private-1a"
+      - "subnet-private-1b"
+  
+  # Load balancer configuration
+  load_balancer:
+    target_group_arn: "arn:aws:elasticloadbalancing:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:targetgroup/btg-gateway-{{ENVIRONMENT}}/xxxxx"
+    container_name: "gateway"
+    container_port: 8080
+  
+  # Service discovery (optional)
+  service_registries:
+    enabled: false
+    # registry_arn: "arn:aws:servicediscovery:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:service/srv-xxxxx"
+    # container_name: "gateway"
+    # container_port: 8080
+  
+  # Auto-scaling configuration
+  auto_scaling:
+    enabled: true
+    min_capacity: 2
+    max_capacity: 10
+    target_tracking:
+      - metric: "ECSServiceAverageCPUUtilization"
+        target_value: 70
+        scale_in_cooldown: 300
+        scale_out_cooldown: 60
+      - metric: "ECSServiceAverageMemoryUtilization"
+        target_value: 80
+        scale_in_cooldown: 300
+        scale_out_cooldown: 60
+      - metric: "ALBRequestCountPerTarget"
+        target_value: 1000
+        scale_in_cooldown: 300
+        scale_out_cooldown: 60
+  
+  # Health check grace period
+  health_check_grace_period_seconds: 60
+  
+  # Propagate tags from task definition
+  propagate_tags: "TASK_DEFINITION"
+  
+  # Enable execute command (for debugging)
+  enable_execute_command: true
+
+# Environment-specific overrides
+environments:
+  dev:
+    desired_count: 1
+    auto_scaling:
+      enabled: false
+    enable_execute_command: true
+    network:
+      assign_public_ip: true  # For easier debugging
+  
+  staging:
+    desired_count: 2
+    auto_scaling:
+      min_capacity: 2
+      max_capacity: 6
+  
+  production:
+    desired_count: 3
+    auto_scaling:
+      min_capacity: 3
+      max_capacity: 20
+    enable_execute_command: false  # Disable in prod for security
+
+# Deployment strategies
+deployment_strategies:
+  blue_green:
+    enabled: false  # Use rolling deployment by default
+    termination_wait_time_minutes: 5
+  
+  canary:
+    enabled: false
+    canary_percentage: 10
+    canary_interval_minutes: 5
+
+# Monitoring and alarms
+alarms:
+  cpu_high:
+    threshold: 85
+    evaluation_periods: 2
+    datapoints_to_alarm: 2
+  
+  memory_high:
+    threshold: 90
+    evaluation_periods: 2
+    datapoints_to_alarm: 2
+  
+  target_response_time:
+    threshold: 2000  # milliseconds
+    evaluation_periods: 3
+    datapoints_to_alarm: 2
+  
+  unhealthy_target_count:
+    threshold: 1
+    evaluation_periods: 2
+    datapoints_to_alarm: 1

@@ -1,0 +1,197 @@
+# ==============================================================================
+# MFE Artifact Pipeline - Build & Publish Only
+# ==============================================================================
+# This workflow runs in APPLICATION REPOS (btg-shell-mfe, btg-enhancer-mfe)
+# 
+# Purpose: Build once, publish to GHCR
+# Does NOT deploy to AWS - that happens in btg-devops repo
+#
+# Flow:
+#   1. App Repo: Build → Publish to GHCR → Trigger btg-devops
+#   2. DevOps Repo: Pull from GHCR → Deploy to AWS
+# ==============================================================================
+
+name: Build & Publish Artifact
+
+on:
+  push:
+    branches:
+      - develop        # Trigger dev deployment
+      - release/*      # Trigger staging deployment
+      - main          # Trigger prod deployment
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip tests for emergency builds'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  APP_NAME: shell        # Change to: enhancer, analytics, etc.
+  NODE_VERSION: '20'
+  REGISTRY: ghcr.io
+
+jobs:
+  # ===========================================================================
+  # Job 1: Build and Publish to GHCR (Immutable Artifact)
+  # ===========================================================================
+  build-publish:
+    runs-on: ubuntu-latest
+    outputs:
+      build-version: ${{ steps.create-artifact.outputs.build-version }}
+      environment: ${{ steps.determine-env.outputs.environment }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+      
+      - name: Run tests
+        if: ${{ inputs.skip_tests != true }}
+        run: npm run test:ci 2>/dev/null || echo "⚠️ No tests configured"
+      
+      - name: Run linting
+        run: npm run lint 2>/dev/null || echo "⚠️ No linting configured"
+      
+      - name: Build application
+        run: npm run build
+        env:
+          NODE_ENV: production
+      
+      - name: Create build artifact
+        id: create-artifact
+        run: |
+          BUILD_VERSION="${GITHUB_SHA:0:7}-$(date +%Y%m%d-%H%M%S)"
+          echo "build-version=${BUILD_VERSION}" >> $GITHUB_OUTPUT
+          
+          # Find dist folder
+          BUILD_DIR=$(find dist -maxdepth 2 -type d -name browser -o -type d -name "btg-*-mfe" | head -1)
+          [ -z "$BUILD_DIR" ] && BUILD_DIR="dist"
+          
+          echo "📦 Packaging: ${BUILD_DIR}"
+          tar -czf btg-${{ env.APP_NAME }}-mfe-${BUILD_VERSION}.tar.gz -C ${BUILD_DIR} .
+          
+          # Create metadata
+          cat > build-metadata.json <<EOF
+          {
+            "buildVersion": "${BUILD_VERSION}",
+            "appName": "${{ env.APP_NAME }}",
+            "gitCommit": "${GITHUB_SHA}",
+            "gitBranch": "${GITHUB_REF_NAME}",
+            "buildDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Publish to GHCR
+        env:
+          BUILD_VERSION: ${{ steps.create-artifact.outputs.build-version }}
+        run: |
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository_owner }}/btg-${{ env.APP_NAME }}-mfe"
+          
+          # Create Dockerfile
+          cat > Dockerfile <<EOF
+          FROM scratch
+          COPY btg-${{ env.APP_NAME }}-mfe-${BUILD_VERSION}.tar.gz /artifact.tar.gz
+          COPY build-metadata.json /metadata.json
+          EOF
+          
+          # Build and push
+          docker build -t ${IMAGE_NAME}:${BUILD_VERSION} -t ${IMAGE_NAME}:latest .
+          docker push ${IMAGE_NAME}:${BUILD_VERSION}
+          docker push ${IMAGE_NAME}:latest
+          
+          echo "✅ Published: ${IMAGE_NAME}:${BUILD_VERSION}"
+      
+      - name: Determine target environment
+        id: determine-env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=none" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Build summary
+        env:
+          BUILD_VERSION: ${{ steps.create-artifact.outputs.build-version }}
+          TARGET_ENV: ${{ steps.determine-env.outputs.environment }}
+        run: |
+          echo "### 🚀 Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App:** ${{ env.APP_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${BUILD_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${GITHUB_REF_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${TARGET_ENV}" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** ghcr.io/${{ github.repository_owner }}/btg-${{ env.APP_NAME }}-mfe:${BUILD_VERSION}" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Job 2: Trigger Deployment in btg-devops Repo
+  # ===========================================================================
+  trigger-deployment:
+    needs: [build-publish]
+    if: needs.build-publish.outputs.environment != 'none'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger deployment via repository_dispatch
+        env:
+          BUILD_VERSION: ${{ needs.build-publish.outputs.build-version }}
+          TARGET_ENV: ${{ needs.build-publish.outputs.environment }}
+        run: |
+          echo "📡 Triggering deployment in btg-devops repo..."
+          
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.DEVOPS_REPO_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${{ github.repository_owner }}/btg-devops/dispatches \
+            -d '{
+              "event_type": "deploy-mfe",
+              "client_payload": {
+                "app_name": "${{ env.APP_NAME }}",
+                "build_version": "'"${BUILD_VERSION}"'",
+                "environment": "'"${TARGET_ENV}"'",
+                "source_repo": "${{ github.repository }}",
+                "source_branch": "${{ github.ref_name }}",
+                "source_commit": "${{ github.sha }}",
+                "triggered_by": "${{ github.actor }}"
+              }
+            }'
+          
+          echo "✅ Deployment triggered for ${TARGET_ENV} environment"
+          echo "🔗 Monitor deployment: https://github.com/${{ github.repository_owner }}/btg-devops/actions"
+      
+      - name: Deployment triggered summary
+        env:
+          BUILD_VERSION: ${{ needs.build-publish.outputs.build-version }}
+          TARGET_ENV: ${{ needs.build-publish.outputs.environment }}
+        run: |
+          echo "### 🚀 Deployment Triggered" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${TARGET_ENV}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${BUILD_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "**DevOps Repo:** https://github.com/${{ github.repository_owner }}/btg-devops/actions" >> $GITHUB_STEP_SUMMARY

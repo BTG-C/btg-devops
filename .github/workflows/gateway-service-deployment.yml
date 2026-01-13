@@ -1,0 +1,157 @@
+name: Gateway Service Deployment
+
+on:
+  repository_dispatch:
+    types: [deploy-gateway-service]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy Gateway Service
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || github.event.client_payload.environment }}
+    
+    steps:
+      - name: Checkout DevOps repo
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-actions-gateway-deploy
+      
+      - name: Download image from GHCR
+        run: |
+          IMAGE_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.image_tag }}"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          
+          echo "Pulling image from GHCR..."
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker pull ghcr.io/btg-c/btg-gateway-service:$IMAGE_TAG || exit 1
+      
+      - name: Prepare task definition
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment || github.event.client_payload.environment }}"
+          
+          # Copy template
+          cp services/gateway-service/ecs/task-definition-template.json task-definition.json
+          
+          # Replace placeholders with environment-specific values
+          sed -i "s|{{IMAGE_TAG}}|$IMAGE_TAG|g" task-definition.json
+          sed -i "s|{{ENVIRONMENT}}|$ENV_NAME|g" task-definition.json
+          sed -i "s|{{AWS_REGION}}|${{ secrets.AWS_REGION }}|g" task-definition.json
+          sed -i "s|{{AWS_ACCOUNT_ID}}|${{ secrets.AWS_ACCOUNT_ID }}|g" task-definition.json
+          
+          echo "Task definition prepared:"
+          cat task-definition.json
+      
+      - name: Register task definition
+        id: task-def
+        run: |
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://task-definition.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          
+          echo "task_definition_arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
+          echo "Registered task definition: $TASK_DEF_ARN"
+      
+      - name: Update ECS service
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment || github.event.client_payload.environment }}"
+          
+          echo "Updating ECS service..."
+          aws ecs update-service \
+            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
+            --service ${{ secrets.GATEWAY_SERVICE }} \
+            --task-definition ${{ steps.task-def.outputs.task_definition_arn }} \
+            --force-new-deployment
+          
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
+            --services ${{ secrets.GATEWAY_SERVICE }} || {
+              echo "Service failed to stabilize"
+              exit 1
+            }
+      
+      - name: Verify deployment
+        run: |
+          echo "Checking service health..."
+          TASK_ARNS=$(aws ecs list-tasks \
+            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
+            --service-name ${{ secrets.GATEWAY_SERVICE }} \
+            --desired-status RUNNING \
+            --query 'taskArns[0]' \
+            --output text)
+          
+          if [ -z "$TASK_ARNS" ]; then
+            echo "No running tasks found"
+            exit 1
+          fi
+          
+          TASK_HEALTH=$(aws ecs describe-tasks \
+            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
+            --tasks $TASK_ARNS \
+            --query 'tasks[0].healthStatus' \
+            --output text)
+          
+          echo "Task health status: $TASK_HEALTH"
+          
+          if [ "$TASK_HEALTH" != "HEALTHY" ]; then
+            echo "Task is not healthy"
+            exit 1
+          fi
+      
+      - name: Smoke test
+        run: |
+          echo "Running smoke test..."
+          HEALTH_URL="${{ secrets.GATEWAY_ALB_URL }}/actuator/health"
+          
+          MAX_ATTEMPTS=10
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL || echo "000")
+            
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Smoke test passed (HTTP $HTTP_STATUS)"
+              exit 0
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS failed (HTTP $HTTP_STATUS), retrying in 10s..."
+            sleep 10
+          done
+          
+          echo "❌ Smoke test failed after $MAX_ATTEMPTS attempts"
+          exit 1
+      
+      - name: Deployment summary
+        if: always()
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment || github.event.client_payload.environment }}"
+          
+          echo "## Gateway Service Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** $ENV_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag:** $IMAGE_TAG" >> $GITHUB_STEP_SUMMARY
+          echo "- **Task Definition:** ${{ steps.task-def.outputs.task_definition_arn }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster:** ${{ secrets.GATEWAY_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${{ secrets.GATEWAY_SERVICE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

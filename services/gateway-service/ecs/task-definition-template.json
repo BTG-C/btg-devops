@@ -1,0 +1,90 @@
+{
+  "family": "btg-gateway-service",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::{{AWS_ACCOUNT_ID}}:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::{{AWS_ACCOUNT_ID}}:role/btg-gateway-task-role",
+  "containerDefinitions": [
+    {
+      "name": "gateway",
+      "image": "ghcr.io/btg-c/btg-gateway-service:{{IMAGE_TAG}}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "ENVIRONMENT",
+          "value": "{{ENVIRONMENT}}"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "{{AWS_REGION}}"
+        },
+        {
+          "name": "JAVA_TOOL_OPTIONS",
+          "value": "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "AUTH_SERVER_URL",
+          "valueFrom": "arn:aws:ssm:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:parameter/btg/{{ENVIRONMENT}}/auth-server-url"
+        },
+        {
+          "name": "MONGODB_URI",
+          "valueFrom": "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:secret:btg/{{ENVIRONMENT}}/mongodb-uri"
+        },
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:secret:btg/{{ENVIRONMENT}}/jwt-secret"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/btg-gateway-service",
+          "awslogs-region": "{{AWS_REGION}}",
+          "awslogs-stream-prefix": "{{ENVIRONMENT}}"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8080/actuator/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "stopTimeout": 30,
+      "ulimits": [
+        {
+          "name": "nofile",
+          "softLimit": 65536,
+          "hardLimit": 65536
+        }
+      ]
+    }
+  ],
+  "tags": [
+    {
+      "key": "Environment",
+      "value": "{{ENVIRONMENT}}"
+    },
+    {
+      "key": "Service",
+      "value": "gateway-service"
+    },
+    {
+      "key": "ManagedBy",
+      "value": "GitHub-Actions"
+    }
+  ]
+}
