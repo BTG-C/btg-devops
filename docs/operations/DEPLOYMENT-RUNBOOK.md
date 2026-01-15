@@ -54,9 +54,9 @@ git push origin develop
 **What Happens Automatically:**
 1. App repo runs `artifact-pipeline.yml`
 2. Builds Docker image with tag: `develop-abc123-20260113143052`
-3. Pushes to GHCR: `ghcr.io/btg-c/auth-server:develop-abc123`
+3. Pushes to GHCR: `ghcr.io/btg-c/btg-gateway-service:develop-abc123`
 4. Triggers DevOps repo with `repository_dispatch`
-5. DevOps repo runs `promotion-pipeline.yml`
+5. DevOps repo runs `gateway-service-deployment.yml` or `mfe-promotion-pipeline.yml`
 6. Deploys to dev environment (no approval needed)
 
 **Timeline:** 5-10 minutes
@@ -64,10 +64,14 @@ git push origin develop
 ### Manual Deployment (If Needed)
 
 ```powershell
-# Trigger deployment from DevOps repo
+# Gateway Service deployment
 cd c:\Git\btg-devops
-gh workflow run promotion-pipeline.yml \
-  -f service=auth-server \
+gh workflow run gateway-service-deployment.yml \
+  -f environment=dev
+
+# MFE deployment
+gh workflow run mfe-promotion-pipeline.yml \
+  -f service=shell \
   -f image_tag=develop-abc123-20260113143052 \
   -f environment=dev
 ```
@@ -76,7 +80,9 @@ gh workflow run promotion-pipeline.yml \
 
 ```powershell
 # Option 1: Browser
-gh workflow view promotion-pipeline.yml --web
+gh workflow view gateway-service-deployment.yml --web
+# Or for MFEs:
+gh workflow view mfe-promotion-pipeline.yml --web
 
 # Option 2: Terminal
 gh run watch
@@ -123,8 +129,13 @@ git push origin release/v1.2.0
 
 ```powershell
 cd c:\Git\btg-devops
-gh workflow run promotion-pipeline.yml \
-  -f service=auth-server \
+# Gateway Service
+gh workflow run gateway-service-deployment.yml \
+  -f environment=staging
+
+# MFE
+gh workflow run mfe-promotion-pipeline.yml \
+  -f service=shell \
   -f image_tag=release-v1.2.0-def456-20260113150234 \
   -f environment=staging
 ```
@@ -170,8 +181,13 @@ gh workflow run promotion-pipeline.yml \
 
 ```powershell
 cd c:\Git\btg-devops
-gh workflow run promotion-pipeline.yml \
-  -f service=auth-server \
+# Gateway Service
+gh workflow run gateway-service-deployment.yml \
+  -f environment=production
+
+# MFE
+gh workflow run mfe-promotion-pipeline.yml \
+  -f service=shell \
   -f image_tag=release-v1.2.0-def456-20260113150234 \
   -f environment=production
 ```

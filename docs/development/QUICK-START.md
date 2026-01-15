@@ -133,18 +133,20 @@ Run the setup verification script:
 
 ### Deploy to Development Environment
 
-1. **Trigger a test deployment:**
+1. **Trigger Gateway Service deployment:**
 ```powershell
-gh workflow run promotion-pipeline.yml \
-  -f service=auth-server \
-  -f image_tag=test-deployment \
+# Gateway Service deployment (example - requires image in GHCR)
+gh workflow run gateway-service-deployment.yml \
   -f environment=dev
+
+# Or trigger from GitHub Actions UI
+# Actions → Gateway Service Deployment → Run workflow → Select 'dev'
 ```
 
 2. **Watch the deployment:**
 ```powershell
 # Open GitHub Actions in browser
-gh workflow view promotion-pipeline.yml --web
+gh workflow view gateway-service-deployment.yml --web
 
 # Or watch from terminal
 gh run watch

@@ -9,6 +9,16 @@
 # Flow:
 #   1. App Repo: Build → Publish to GHCR → Trigger btg-devops
 #   2. DevOps Repo: Pull from GHCR → Deploy to AWS
+#
+# ------------------------------------------------------------------------------
+# ⚙️ SETUP INSTRUCTIONS
+# ------------------------------------------------------------------------------
+# 1. Add Repository Secret (in this repo):
+#    - DEVOPS_REPO_TOKEN: ......... Personal Access Token (PAT) with repo scope.
+#                                   Essential for triggering workflows in btg-devops.
+#
+# 2. Configure Environment:
+#    - Update env.APP_NAME below (e.g., 'shell', 'enhancer')
 # ==============================================================================
 
 name: Build & Publish Artifact

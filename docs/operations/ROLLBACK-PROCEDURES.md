@@ -31,16 +31,19 @@
 ### Step 1: Find Previous Stable Version
 
 ```powershell
-# List recent deployments
+# List recent Gateway Service deployments
 cd c:\Git\btg-devops
-gh run list --workflow=promotion-pipeline.yml --limit 10
+gh run list --workflow=gateway-service-deployment.yml --limit 10
 
 # Find last successful production deployment
-gh run list --workflow=promotion-pipeline.yml --json conclusion,headSha,createdAt,displayTitle | ConvertFrom-Json | Where-Object { $_.conclusion -eq "success" -and $_.displayTitle -like "*production*" } | Select-Object -First 1
+gh run list --workflow=gateway-service-deployment.yml --json conclusion,headSha,createdAt,displayTitle | ConvertFrom-Json | Where-Object { $_.conclusion -eq "success" -and $_.displayTitle -like "*production*" } | Select-Object -First 1
+
+# For MFEs, use mfe-promotion-pipeline.yml instead
+gh run list --workflow=mfe-promotion-pipeline.yml --limit 10
 
 # Example output:
 # createdAt: 2026-01-12T15:30:00Z
-# displayTitle: Deploy auth-server to production
+# displayTitle: Deploy gateway-service to production
 # headSha: xyz789abc123
 ```
 
@@ -55,7 +58,7 @@ gh run view <run-id> --log
 
 # Option 2: Check GHCR directly
 gh api -H "Accept: application/vnd.github+json" \
-  /orgs/BTG-C/packages/container/btg-auth-server/versions \
+  /orgs/BTG-C/packages/container/btg-gateway-service/versions \
   | jq -r '.[] | select(.metadata.container.tags[] | contains("release")) | .metadata.container.tags[0]' \
   | head -5
 
@@ -65,16 +68,14 @@ gh api -H "Accept: application/vnd.github+json" \
 ### Step 3: Trigger Rollback
 
 ```powershell
-# Use rollback workflow (preferred)
-gh workflow run rollback-pipeline.yml \
-  -f service=auth-server \
-  -f image_tag=release-v1.1.0-xyz789-20260112-153000 \
-  -f environment=production \
-  -f reason="Rolling back due to high error rate"
+# Gateway Service: Redeploy previous version
+gh workflow run gateway-service-deployment.yml \
+  -f environment=production
+# Note: Must update GATEWAY_IMAGE_TAG in GitHub Environment first
 
-# OR use promotion pipeline with old tag
-gh workflow run promotion-pipeline.yml \
-  -f service=auth-server \
+# MFE: Redeploy previous version  
+gh workflow run mfe-promotion-pipeline.yml \
+  -f service=shell \
   -f image_tag=release-v1.1.0-xyz789-20260112-153000 \
   -f environment=production
 ```
@@ -299,7 +300,8 @@ cd c:\Git\btg-auth-server
 
 # Step 4: Rollback application
 cd c:\Git\btg-devops
-gh workflow run rollback-pipeline.yml ...
+gh workflow run gateway-service-deployment.yml \
+  -f environment=prod
 ```
 
 **Prevention:** Always make migrations backward-compatible (add nullable columns first, make NOT NULL in later release)
@@ -317,7 +319,8 @@ aws secretsmanager describe-secret \
 # Verify AWSPREVIOUS exists
 
 # Step 2: Rollback application (tasks will use AWSCURRENT)
-gh workflow run rollback-pipeline.yml ...
+gh workflow run gateway-service-deployment.yml \
+  -f environment=production
 
 # Step 3: After rollback stabilizes, rotate back to old secret
 aws secretsmanager update-secret-version-stage \
@@ -341,7 +344,8 @@ cd c:\Git\btg-devops
 gh issue list --label "production,success" --limit 20
 
 # Step 3: Rollback to that version (may be weeks old)
-gh workflow run rollback-pipeline.yml \
+gh workflow run mfe-promotion-pipeline.yml \
+  -f service=gateway \
   -f image_tag=release-v1.0.0-old123-20251215-100000 \
   -f environment=production
 ```
@@ -418,17 +422,13 @@ Everything working? ────YES────> MONITOR for 30 minutes, then ma
 
 ```powershell
 # 1. Deploy current version to staging
-gh workflow run promotion-pipeline.yml \
-  -f service=auth-server \
-  -f image_tag=current-version \
+gh workflow run gateway-service-deployment.yml \
   -f environment=staging
 
 # 2. Wait for deployment to complete
 
-# 3. Simulate rollback
-gh workflow run rollback-pipeline.yml \
-  -f service=auth-server \
-  -f image_tag=previous-version \
+# 3. Simulate rollback (update GitHub Environment with old image tag first)
+gh workflow run gateway-service-deployment.yml \
   -f environment=staging
 
 # 4. Verify rollback succeeded

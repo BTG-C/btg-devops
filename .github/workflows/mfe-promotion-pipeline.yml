@@ -4,6 +4,21 @@
 # Runs in: btg-devops repository
 # Triggered by: repository_dispatch from app repos OR manual workflow_dispatch
 # Purpose: Pull artifact from GHCR → Deploy to S3 → Invalidate CloudFront
+#
+# ------------------------------------------------------------------------------
+# ⚙️ SETUP INSTRUCTIONS
+# ------------------------------------------------------------------------------
+# 1. Create Environments in GitHub Settings (btg-devops repo):
+#    - dev
+#    - staging
+#    - prod
+#
+# 2. Add Secrets to EACH Environment:
+#    - AWS_ROLE_ARN: .............. IAM Role ARN for OIDC Trust
+#    - AWS_REGION: ................ Target AWS Region (e.g., us-east-1)
+#    - S3_BUCKET_NAME: ............ Target Shared Bucket (e.g., btg-dev-blue)
+#    - CLOUDFRONT_DISTRIBUTION_ID:  ID for cache invalidation
+#    - CLOUDFRONT_URL: ............ URL for smoke testing (e.g., https://d123.cloudfront.net)
 # ==============================================================================
 
 name: MFE Promotion Pipeline
@@ -128,34 +143,59 @@ jobs:
         run: |
           echo "☁️ Deploying to S3: ${S3_BUCKET}"
           
-          # Deploy immutable assets with long cache
-          aws s3 sync deploy/ s3://${S3_BUCKET}/ \
-            --delete \
-            --cache-control "public,max-age=31536000,immutable" \
-            --exclude "index.html" \
-            --exclude "config/*" \
-            --exclude "*/remoteEntry.json"
+          # ====================================================================
+          # SAFE DEPLOYMENT STRATEGY (Shared Bucket)
+          # ====================================================================
           
-          # Deploy index.html with no-cache
+          # 1. Handle Sub-directories (mfe-bundles, assets) - Scoped Sync
+          # Syncs 'deploy/assets/shell' -> 's3://.../assets/shell' with --delete
+          for dir in "mfe-bundles" "assets"; do
+            if [ -d "deploy/$dir" ]; then
+              # Sync Directories (Recursive with --delete)
+              find "deploy/$dir" -mindepth 1 -maxdepth 1 -type d | while read sub_dir; do
+                relative_path="${sub_dir#deploy/}"
+                echo "Syncing subdirectory: $relative_path"
+                aws s3 sync "$sub_dir" "s3://${S3_BUCKET}/$relative_path" \
+                  --delete \
+                  --cache-control "public,max-age=31536000,immutable" \
+                  --exclude "*/remoteEntry.json"
+              done
+
+              # Sync Files at root of these folders (e.g., assets/favicon.ico) - Copy Only (No Delete)
+              find "deploy/$dir" -maxdepth 1 -type f | while read file; do
+                relative_path="${file#deploy/}"
+                echo "Copying file: $relative_path"
+                aws s3 cp "$file" "s3://${S3_BUCKET}/$relative_path" \
+                    --cache-control "public,max-age=31536000,immutable"
+              done
+            fi
+          done
+
+          # 2. Handle Root Files (Shell Bundles) - Copy Only
+          # Avoid 'sync --delete' at root to prevent wiping other MFEs
+          find deploy -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" -o -name "*.txt" -o -name "*.map" \) | while read file; do
+             fname=$(basename "$file")
+             aws s3 cp "$file" "s3://${S3_BUCKET}/$fname" --cache-control "public,max-age=31536000,immutable"
+          done
+
+          # 3. Deploy index.html (No Cache)
           if [ -f "deploy/index.html" ]; then
             aws s3 cp deploy/index.html s3://${S3_BUCKET}/index.html \
               --cache-control "no-cache,no-store,must-revalidate"
           fi
           
-          # Deploy runtime configs with no-cache
+          # 4. Deploy config (No Cache)
           if [ -d "deploy/config" ]; then
             aws s3 sync deploy/config/ s3://${S3_BUCKET}/config/ \
               --cache-control "no-cache,no-store,must-revalidate"
           fi
           
-          # Deploy MFE entry points with no-cache
-          if [ -d "deploy/mfe-bundles" ]; then
-            find deploy/mfe-bundles -name "remoteEntry.json" | while read file; do
-              s3_path="${file#deploy/}"
-              aws s3 cp "$file" "s3://${S3_BUCKET}/${s3_path}" \
-                --cache-control "no-cache,no-store,must-revalidate"
-            done
-          fi
+          # 5. Update remoteEntry.json (No Cache) - Universal
+          find deploy -name "remoteEntry.json" | while read file; do
+            s3_path="${file#deploy/}"
+            aws s3 cp "$file" "s3://${S3_BUCKET}/${s3_path}" \
+              --cache-control "no-cache,no-store,must-revalidate"
+          done
           
           echo "✅ Deployed to S3"
       
