@@ -125,6 +125,30 @@ jobs:
           mkdir -p deploy
           tar -xzf artifact.tar.gz -C deploy/ || exit 1
           
+          # ====================================================================
+          # Restructure Artifact (If needed)
+          # ====================================================================
+          # Shell MFE -> Deploys to root (standard)
+          # Other MFEs (Enhancer, etc.) -> Must go to /mfe-bundles/{appName}/
+          # Assets -> Always stay in /assets/ (merged)
+          
+          if [[ "${APP_NAME}" != "shell" ]]; then
+             echo "📦 Restructuring for ${APP_NAME}..."
+             TARGET_DIR="deploy/mfe-bundles/${APP_NAME}"
+             mkdir -p "${TARGET_DIR}"
+  
+             # Move Bundles (JS, CSS, JSON, Maps) from ROOT to TARGET_DIR
+             # Logic: Move everything except 'assets' folder and nested dirs
+             find deploy -maxdepth 1 -type f -exec mv {} "${TARGET_DIR}/" \;
+             
+             # Assets are assumed to be correctly namespaced in source (src/assets/enhancer)
+             # So deploy/assets/enhancer should already exist if built correctly.
+             # No action needed for assets if they are already in 'assets' folder at root.
+             
+             echo "✅ Restructured files into ${TARGET_DIR}"
+             ls -R deploy/
+          fi
+          
           echo "✅ Artifact extracted"
           cat metadata.json
       
@@ -173,9 +197,26 @@ jobs:
 
           # 2. Handle Root Files (Shell Bundles) - Copy Only
           # Avoid 'sync --delete' at root to prevent wiping other MFEs
-          find deploy -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" -o -name "*.txt" -o -name "*.map" \) | while read file; do
+          # Copy all root files (e.g. favicon.ico) excluding explicit no-cache files.
+          find deploy -maxdepth 1 -type f | while read file; do
              fname=$(basename "$file")
-             aws s3 cp "$file" "s3://${S3_BUCKET}/$fname" --cache-control "public,max-age=31536000,immutable"
+             
+             # Skip sensitive files that are handled later
+             if [[ "$fname" == "index.html" || "$fname" == "remoteEntry.json" ]]; then
+                 continue
+             fi
+             
+             # Determine Cache Control based on filename
+             # Mutable: favicon.ico, robots.txt, sitemap.xml, manifest.json
+             # Immutable: Everything else (hashed bundles)
+             CACHE_CONTROL="public,max-age=31536000,immutable"
+             
+             if [[ "$fname" == "favicon.ico" || "$fname" == "robots.txt" || "$fname" == "sitemap.xml" || "$fname" == "manifest.webmanifest" || "$fname" == "manifest.json" ]]; then
+                 CACHE_CONTROL="no-cache,no-store,must-revalidate"
+             fi
+
+             echo "Copying root file: $fname (Cache: $CACHE_CONTROL)"
+             aws s3 cp "$file" "s3://${S3_BUCKET}/$fname" --cache-control "$CACHE_CONTROL"
           done
 
           # 3. Deploy index.html (No Cache)
