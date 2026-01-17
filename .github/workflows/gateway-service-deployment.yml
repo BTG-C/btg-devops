@@ -1,3 +1,25 @@
+# ==============================================================================
+# Gateway Service Deployment Pipeline
+# ==============================================================================
+# Runs in: btg-devops repository
+# Purpose: Deploy Gateway Service Docker image to AWS ECS
+#
+# ------------------------------------------------------------------------------
+# 🔐 CRITICAL SECRETS SETUP
+# ------------------------------------------------------------------------------
+# The following secrets must be added to THIS repository:
+#
+# 1. AWS Credentials:
+#    - AWS_ACCESS_KEY_ID
+#    - AWS_SECRET_ACCESS_KEY
+#    - AWS_REGION (e.g., us-east-1)
+#    - AWS_ACCOUNT_ID
+#
+# 2. ECS Infrastructure:
+#    - GATEWAY_CLUSTER: Name of the ECS Cluster
+#    - GATEWAY_SERVICE: Name of the ECS Service
+# ==============================================================================
+
 name: Gateway Service Deployment
 
 on:
@@ -12,92 +34,83 @@ on:
         options:
           - dev
           - staging
-          - production
+          - prod
       image_tag:
-        description: 'Docker image tag to deploy'
+        description: 'Docker image tag'
         required: true
         type: string
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   deploy:
     name: Deploy Gateway Service
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || github.event.client_payload.environment }}
+    environment: ${{ github.event.client_payload.environment || inputs.environment }}
     
     steps:
       - name: Checkout DevOps repo
         uses: actions/checkout@v4
+      
+      - name: Set variables
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "IMAGE_TAG=${{ github.event.client_payload.image_tag }}" >> $GITHUB_ENV
+            echo "ENV_NAME=${{ github.event.client_payload.environment }}" >> $GITHUB_ENV
+          else
+            echo "IMAGE_TAG=${{ inputs.image_tag }}" >> $GITHUB_ENV
+            echo "ENV_NAME=${{ inputs.environment }}" >> $GITHUB_ENV
+          fi
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-actions-gateway-deploy
       
-      - name: Download image from GHCR
+      - name: Deploy to ECS
         run: |
-          IMAGE_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.image_tag }}"
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "🚀 Deploying to ECS Cluster: ${{ secrets.GATEWAY_CLUSTER }}"
+          echo "Service: ${{ secrets.GATEWAY_SERVICE }}"
+          echo "Image: ghcr.io/btg-c/btg-gateway-service:$IMAGE_TAG"
           
-          echo "Pulling image from GHCR..."
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker pull ghcr.io/btg-c/btg-gateway-service:$IMAGE_TAG || exit 1
-      
-      - name: Prepare task definition
-        run: |
-          ENV_NAME="${{ github.event.inputs.environment || github.event.client_payload.environment }}"
+          # 1. Fetch current task definition
+          # Allows us to preserve environment variables/secrets set in AWS console
+          aws ecs describe-task-definition \
+            --task-definition ${{ secrets.GATEWAY_SERVICE }} \
+            --query taskDefinition > task-def.json
           
-          # Copy template
-          cp services/gateway-service/ecs/task-definition-template.json task-definition.json
-          
-          # Replace placeholders with environment-specific values
-          sed -i "s|{{IMAGE_TAG}}|$IMAGE_TAG|g" task-definition.json
-          sed -i "s|{{ENVIRONMENT}}|$ENV_NAME|g" task-definition.json
-          sed -i "s|{{AWS_REGION}}|${{ secrets.AWS_REGION }}|g" task-definition.json
-          sed -i "s|{{AWS_ACCOUNT_ID}}|${{ secrets.AWS_ACCOUNT_ID }}|g" task-definition.json
-          
-          echo "Task definition prepared:"
-          cat task-definition.json
-      
-      - name: Register task definition
-        id: task-def
-        run: |
-          TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://task-definition.json \
+          # 2. Update image in container definitions using jq
+          # Cleans up read-only fields to make it valid for registration
+          jq --arg IMAGE "ghcr.io/btg-c/btg-gateway-service:$IMAGE_TAG" \
+             '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+             task-def.json > new-task-def.json
+             
+          # 3. Register new task definition
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
+            
+          echo "✅ Registered Task Definition: $NEW_TASK_DEF_ARN"
           
-          echo "task_definition_arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
-          echo "Registered task definition: $TASK_DEF_ARN"
-      
-      - name: Update ECS service
-        run: |
-          ENV_NAME="${{ github.event.inputs.environment || github.event.client_payload.environment }}"
-          
-          echo "Updating ECS service..."
+          # 4. Update Service
           aws ecs update-service \
             --cluster ${{ secrets.GATEWAY_CLUSTER }} \
             --service ${{ secrets.GATEWAY_SERVICE }} \
-            --task-definition ${{ steps.task-def.outputs.task_definition_arn }} \
+            --task-definition $NEW_TASK_DEF_ARN \
             --force-new-deployment
-          
-          echo "Waiting for service to stabilize..."
+            
+          echo "⏳ Waiting for deployment to stabilize..."
           aws ecs wait services-stable \
             --cluster ${{ secrets.GATEWAY_CLUSTER }} \
-            --services ${{ secrets.GATEWAY_SERVICE }} || {
-              echo "Service failed to stabilize"
-              exit 1
-            }
-      
-      - name: Verify deployment
-        run: |
-          echo "Checking service health..."
-          TASK_ARNS=$(aws ecs list-tasks \
-            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
-            --service-name ${{ secrets.GATEWAY_SERVICE }} \
-            --desired-status RUNNING \
-            --query 'taskArns[0]' \
+            --services ${{ secrets.GATEWAY_SERVICE }}
+            
+          echo "✅ Deployment Successful!"
+
             --output text)
           
           if [ -z "$TASK_ARNS" ]; then

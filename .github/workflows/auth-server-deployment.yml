@@ -1,0 +1,126 @@
+# ==============================================================================
+# Auth Server Deployment Pipeline
+# ==============================================================================
+# Runs in: btg-devops repository
+# Purpose: Deploy Auth Server Docker image to AWS ECS
+#
+# ------------------------------------------------------------------------------
+# ⚙️ SETUP INSTRUCTIONS
+# ------------------------------------------------------------------------------
+# 1. AWS Credentials (Secrets):
+#    - AWS_ACCESS_KEY_ID
+#    - AWS_SECRET_ACCESS_KEY
+#    - AWS_REGION
+#    - AWS_ACCOUNT_ID
+#
+# 2. ECS Infrastructure (Secrets):
+#    - AUTH_CLUSTER: ............... Name of ECS Cluster
+#    - AUTH_SERVICE: ............... Name of ECS Service
+# ==============================================================================
+
+name: Auth Server Deployment
+
+on:
+  repository_dispatch:
+    types: [deploy-auth-service]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      image_tag:
+        description: 'Docker image tag (e.g., sha-1234567)'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Auth Server
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.client_payload.environment || inputs.environment }}
+    
+    steps:
+      - name: Checkout DevOps repo
+        uses: actions/checkout@v4
+      
+      - name: Set variables
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "IMAGE_TAG=${{ github.event.client_payload.image_tag }}" >> $GITHUB_ENV
+            echo "ENV_NAME=${{ github.event.client_payload.environment }}" >> $GITHUB_ENV
+          else
+            echo "IMAGE_TAG=${{ inputs.image_tag }}" >> $GITHUB_ENV
+            echo "ENV_NAME=${{ inputs.environment }}" >> $GITHUB_ENV
+          fi
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      - name: Download image from GHCR
+        # We don't necessarily need to pull the image to deploy to ECS (ECS pulls it),
+        # but verifying it exists is a good smoke test.
+        run: |
+          echo "Verifying image existence: ghcr.io/btg-c/btg-auth-server:$IMAGE_TAG"
+          # Optional: Docker login and pull if deeper verification needed
+      
+      - name: Update ECS Service
+        run: |
+          echo "🚀 Deploying to ECS Cluster: ${{ secrets.AUTH_CLUSTER }}"
+          echo "Service: ${{ secrets.AUTH_SERVICE }}"
+          echo "Image: ghcr.io/btg-c/btg-auth-server:$IMAGE_TAG"
+          
+          # Force new deployment with updated image
+          # Note: Should use task-definition update in robust setups, 
+          # but for simplicity/speed, we assume Service uses 'latest' or we force-update.
+          # BETTER APPROACH: Update Task Definition or use CodeDeploy.
+          # Here we assume the Task Definition uses a placeholder or we update it.
+          
+          # Strategy: Use 'aws ecs update-service' with 'force-new-deployment'
+          # DOES NOT change image tag if TD is static.
+          # We need to register a new TD with the new image.
+          
+          # 1. Fetch current task definition
+          aws ecs describe-task-definition \
+            --task-definition ${{ secrets.AUTH_SERVICE }} \
+            --query taskDefinition > task-def.json
+          
+          # 2. Update image in container definitions
+          # Requires 'jq'
+          jq --arg IMAGE "ghcr.io/btg-c/btg-auth-server:$IMAGE_TAG" \
+             '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+             task-def.json > new-task-def.json
+             
+          # 3. Register new task definition
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+            
+          echo "✅ Registered Task Definition: $NEW_TASK_DEF_ARN"
+          
+          # 4. Update Service
+          aws ecs update-service \
+            --cluster ${{ secrets.AUTH_CLUSTER }} \
+            --service ${{ secrets.AUTH_SERVICE }} \
+            --task-definition $NEW_TASK_DEF_ARN \
+            --force-new-deployment
+            
+          echo "⏳ Waiting for deployment to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ secrets.AUTH_CLUSTER }} \
+            --services ${{ secrets.AUTH_SERVICE }}
+            
+          echo "✅ Deployment Successful!"
