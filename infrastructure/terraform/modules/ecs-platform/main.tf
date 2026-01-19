@@ -109,10 +109,43 @@ resource "aws_lb" "public" {
   drop_invalid_header_fields = true
 }
 
+# HTTP Listener - Redirect to HTTPS (if certificate provided)
 resource "aws_lb_listener" "public_http" {
   load_balancer_arn = aws_lb.public.arn
   port              = "80"
   protocol          = "HTTP"
+
+  default_action {
+    type = var.ssl_certificate_arn != "" ? "redirect" : "fixed-response"
+    
+    dynamic "redirect" {
+      for_each = var.ssl_certificate_arn != "" ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+    
+    dynamic "fixed_response" {
+      for_each = var.ssl_certificate_arn == "" ? [1] : []
+      content {
+        content_type = "text/plain"
+        message_body = "404: Not Found (Public)"
+        status_code  = "404"
+      }
+    }
+  }
+}
+
+# HTTPS Listener - SSL Termination (if certificate provided)
+resource "aws_lb_listener" "public_https" {
+  count             = var.ssl_certificate_arn != "" ? 1 : 0
+  load_balancer_arn = aws_lb.public.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.ssl_certificate_arn
 
   default_action {
     type = "fixed-response"

@@ -16,3 +16,8 @@ variable "enable_deletion_protection" {
   type        = bool
   default     = false
 }
+variable "ssl_certificate_arn" {
+  description = "ARN of ACM certificate for HTTPS listener on Public ALB (optional for dev, required for prod/staging)"
+  type        = string
+  default     = ""
+}

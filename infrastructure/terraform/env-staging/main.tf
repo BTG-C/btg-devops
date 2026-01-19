@@ -86,6 +86,7 @@ module "ecs_platform" {
   public_subnets             = module.networking.public_subnet_ids
   private_subnets            = module.networking.private_subnet_ids
   enable_deletion_protection = true  # Staging: Protect shared environment
+  ssl_certificate_arn        = var.certificate_arn  # Required for staging
 }
 
 # ------------------------------------------------------------------------------

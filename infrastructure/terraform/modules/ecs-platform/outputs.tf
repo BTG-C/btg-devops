@@ -7,7 +7,13 @@ output "cluster_name" {
 }
 
 output "public_listener_arn" {
-  value = aws_lb_listener.public_http.arn
+  description = "Public ALB HTTP listener ARN (for services when no SSL)"
+  value       = aws_lb_listener.public_http.arn
+}
+
+output "public_https_listener_arn" {
+  description = "Public ALB HTTPS listener ARN (for services with SSL certificate)"
+  value       = var.ssl_certificate_arn != "" ? aws_lb_listener.public_https[0].arn : ""
 }
 
 output "internal_listener_arn" {

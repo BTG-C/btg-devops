@@ -85,12 +85,13 @@ module "documentdb" {
 module "ecs_platform" {
   source = "../modules/ecs-platform"
 
-  project_name    = var.project_name
-  environment     = var.environment
-  vpc_id          = module.networking.vpc_id
-  vpc_cidr        = module.networking.vpc_cidr
-  public_subnets  = module.networking.public_subnet_ids
-  private_subnets = module.networking.private_subnet_ids
+  project_name           = var.project_name
+  environment            = var.environment
+  vpc_id                 = module.networking.vpc_id
+  vpc_cidr               = module.networking.vpc_cidr
+  public_subnets         = module.networking.public_subnet_ids
+  private_subnets        = module.networking.private_subnet_ids
+  ssl_certificate_arn    = var.certificate_arn  # Optional for dev
 }
 
 # ------------------------------------------------------------------------------
@@ -127,7 +128,7 @@ module "gateway_service" {
   cpu              = 512
   memory           = 1024
   
-  listener_arn      = module.ecs_platform.public_listener_arn
+  listener_arn      = var.certificate_arn != "" ? module.ecs_platform.public_https_listener_arn : module.ecs_platform.public_listener_arn
   path_pattern      = "/*"
   listener_priority = 100
   health_check_path = "/actuator/health"

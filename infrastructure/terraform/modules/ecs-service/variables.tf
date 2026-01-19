@@ -20,7 +20,10 @@ variable "desired_count" {
 variable "health_check_path" {
   default = "/actuator/health"
 }
-variable "listener_arn" {}
+variable "listener_arn" {
+  description = "ARN of the ALB listener to attach the service to"
+  type        = string
+}
 variable "path_pattern" {}
 variable "listener_priority" {}
 variable "security_group_id" {}
@@ -33,16 +36,6 @@ variable "environment_variables" {
     value = string
   }))
   default = []
-}
-
-variable "secrets" {
-  description = "List of secrets to inject into the container (from Secrets Manager or SSM)"
-  type = list(object({
-    name      = string
-    valueFrom = string
-  }))
-  default = []
-}
 }
 
 variable "secrets" {

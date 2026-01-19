@@ -104,7 +104,7 @@ resource "aws_ecs_task_definition" "main" {
 # 6. IAM Policy for Secrets Access
 resource "aws_iam_role_policy" "task_execution_secrets" {
   name = "${var.project_name}-${var.environment}-${var.service_name}-secrets"
-  role = aws_iam_role.task_execution.id
+  role = aws_iam_role.ecs_task_execution_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -124,7 +124,7 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
   })
 }
 
-# 6. ECS Service
+# 7. ECS Service
 resource "aws_ecs_service" "main" {
   name            = "${var.project_name}-${var.environment}-${var.service_name}"
   cluster         = var.cluster_id
