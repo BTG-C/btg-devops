@@ -1,0 +1,74 @@
+# ==============================================================================
+# Enhancer Service Deployment Pipeline
+# ==============================================================================
+# Runs in: btg-devops repository
+# Purpose: Deploy Enhancer Service Docker image to AWS ECS
+#
+# ------------------------------------------------------------------------------
+# 🔐 CRITICAL SECRETS SETUP
+# ------------------------------------------------------------------------------
+# The following secrets must be added to THIS repository:
+#
+# 1. AWS Credentials:
+#    - AWS_ACCESS_KEY_ID
+#    - AWS_SECRET_ACCESS_KEY
+#    - AWS_REGION
+#    - AWS_ACCOUNT_ID
+#
+# 2. ECS Infrastructure:
+#    - ENHANCER_SERVICE_CLUSTER: .......... Name of ECS Cluster
+#    - ENHANCER_SERVICE_SERVICE: .......... Name of ECS Service
+# ==============================================================================
+
+name: Enhancer Service Deployment
+
+on:
+  repository_dispatch:
+    types: [deploy-enhancer-service]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  SERVICE_NAME: enhancer-service
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ghcr.io
+  IMAGE_NAME: btg-c/btg-enhancer-service
+  
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.client_payload.environment || inputs.environment }}
+    
+    steps:
+      - name: Checkout DevOps Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to ECS
+        run: |
+          echo "🚀 Starting Deployment for $SERVICE_NAME to ${{ github.event.client_payload.environment || inputs.environment }}"
+          
+          # In a real scenario, this would:
+          # 1. Render a new Task Definition with the new Image Tag
+          # 2. Register the Task Definition
+          # 3. Update the ECS Service
+          
+          echo "✅ Updating ECS Service: ${{ secrets.ENHANCER_SERVICE_SERVICE }}"
+          aws ecs update-service --cluster ${{ secrets.ENHANCER_SERVICE_CLUSTER }} --service ${{ secrets.ENHANCER_SERVICE_SERVICE }} --force-new-deployment
+          
+          echo "🎉 Deployment Complete!"

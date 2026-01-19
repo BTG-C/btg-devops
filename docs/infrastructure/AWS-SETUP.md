@@ -70,7 +70,7 @@ This guide shows how to deploy the **BTG MFE infrastructure** to AWS using **Ter
 
 ```powershell
 # IMPORTANT: Multi-account setup - complete backend setup first!
-# See: infrastructure/terraform/backend-setup/README.md
+# See: infrastructure/terraform/infra-setup-pre-terraform/README.md
 
 # Navigate to desired environment
 cd c:\Git\btg-devops\infrastructure\terraform\env-dev   # For dev account

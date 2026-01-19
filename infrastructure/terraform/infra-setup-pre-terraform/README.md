@@ -4,7 +4,7 @@ This directory contains one-time setup scripts for creating S3 buckets and Dynam
 
 ## Why Remote State?
 
-- **Separate AWS Accounts**: Dev and Prod use different AWS accounts, so state must be isolated
+- **Separate AWS Accounts**: Dev, Staging, and Prod use different AWS accounts, so state must be isolated
 - **Team Collaboration**: Multiple team members can run Terraform safely
 - **State Locking**: DynamoDB prevents concurrent modifications
 - **Security**: State contains sensitive data (ARNs, IDs), encrypted in S3
@@ -19,7 +19,7 @@ aws configure --profile btg-dev
 # Enter: Access Key ID, Secret, Region (us-east-1), Output format (json)
 
 # Create state backend infrastructure
-cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\dev
+cd c:\Git\btg-devops\infrastructure\terraform\infra-setup-pre-terraform\dev
 terraform init
 terraform plan
 terraform apply
@@ -31,14 +31,33 @@ state_bucket = "btg-terraform-state-dev"
 lock_table   = "btg-terraform-locks-dev"
 ```
 
-### 2. Setup Production Account Backend
+### 2. Setup Staging Account Backend
+
+```powershell
+# Authenticate to STAGING AWS account
+aws configure --profile btg-staging
+
+# Create state backend infrastructure
+cd c:\Git\btg-devops\infrastructure\terraform\infra-setup-pre-terraform\staging
+terraform init
+terraform plan
+terraform apply
+```
+
+**Output:**
+```
+state_bucket = "btg-terraform-state-staging"
+lock_table   = "btg-terraform-locks-staging"
+```
+
+### 3. Setup Production Account Backend
 
 ```powershell
 # Authenticate to PROD AWS account
 aws configure --profile btg-prod
 
 # Create state backend infrastructure
-cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\prod
+cd c:\Git\btg-devops\infrastructure\terraform\infra-setup-pre-terraform\prod
 terraform init
 terraform plan
 terraform apply

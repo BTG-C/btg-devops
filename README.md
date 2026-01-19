@@ -30,20 +30,14 @@ btg-devops/
 │
 ├── services/                         # Service-specific deployment configs
 │   ├── gateway-service/
-│   │   ├── README.md
-│   │   └── ecs/
-│   │       ├── task-definition-template.json
-│   │       └── service-definition.yaml
+│   │   └── README.md                # Documentation only
 │   ├── shell-mfe/
-│   │   ├── README.md
-│   │   ├── s3/
-│   │   │   └── deploy-config.yaml
-│   │   └── cloudfront/
-│   │       └── distribution-config.yaml
-│   ├── enhancer-mfe/
+│   │   └── README.md                # Documentation only
 │   └── auth-server/
+│       └── README.md                # Documentation only
+│   # Note: ECS task/service configs managed by Terraform modules
 │
-├── infrastructure/                   # Terraform infrastructure as code
+├── docs/                            # Documentation organized by domain
 │   └── terraform/
 │       ├── README.md                 # Multi-account structure docs
 │       ├── modules/
@@ -51,7 +45,7 @@ btg-devops/
 │       ├── env-dev/                 # Dev environment (separate AWS account)
 │       ├── env-staging/             # Staging (prod AWS account)
 │       ├── env-prod/                # Production (prod AWS account)
-│       └── backend-setup/           # One-time S3+DynamoDB setup
+│       └── infra-setup-pre-terraform/           # One-time S3+DynamoDB setup
 │           ├── dev/
 │           └── prod/
 │
@@ -103,7 +97,7 @@ cd btg-devops
 # See: docs/development/GITHUB-ENVIRONMENTS-SETUP.md
 
 # 3. Setup Terraform backend (one-time per AWS account)
-cd infrastructure/terraform/backend-setup/dev
+cd infrastructure/terraform/infra-setup-pre-terraform/dev
 terraform init && terraform apply
 
 cd ../prod

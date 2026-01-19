@@ -2,14 +2,15 @@
 
 ## Overview
 
-BTG uses **separate AWS accounts** for dev and production environments:
+BTG uses **separate AWS accounts** for each environment to ensure maximum isolation:
 - **Dev Account**: Development and testing
-- **Prod Account**: Staging and production environments
+- **Staging Account**: Pre-production and staging environments
+- **Prod Account**: Production environments
 
 This structure provides:
-- ✅ **Blast radius isolation**: Dev issues can't affect production
-- ✅ **Cost tracking**: Separate billing per account
-- ✅ **Security compliance**: Production data isolated
+- ✅ **Blast radius isolation**: Issues in one env can't affect others
+- ✅ **Cost tracking**: Separate billing per account/environment
+- ✅ **Security compliance**: Strict data and access isolation
 - ✅ **State isolation**: Terraform state stored per account
 
 ---
@@ -21,6 +22,7 @@ infrastructure/terraform/
 ├── backend-setup/           # One-time setup for remote state
 │   ├── README.md
 │   ├── dev/                # Creates S3+DynamoDB in dev account
+│   ├── staging/            # Creates S3+DynamoDB in staging account
 │   └── prod/               # Creates S3+DynamoDB in prod account
 │
 ├── modules/
@@ -40,12 +42,12 @@ infrastructure/terraform/
 │   ├── variables.tf       # Input variables
 │   └── terraform.tfvars   # Dev-specific values
 │
-├── env-staging/            # Staging environment (prod account)
+├── env-staging/            # Staging environment
 │   ├── main.tf
 │   ├── variables.tf
 │   └── terraform.tfvars
 │
-└── env-prod/               # Production environment (prod account)
+└── env-prod/               # Production environment
     ├── main.tf
     ├── variables.tf
     └── terraform.tfvars
@@ -66,7 +68,13 @@ cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\dev
 terraform init
 terraform apply
 
-# Setup prod account backend (used by staging + prod)
+# Setup staging account backend
+aws configure --profile btg-staging
+cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\staging
+terraform init
+terraform apply
+
+# Setup prod account backend
 aws configure --profile btg-prod
 cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\prod
 terraform init
@@ -258,8 +266,8 @@ This structure follows **2026 infrastructure best practices**:
 
 | Task | Command |
 |------|---------|
-| Setup backend (dev) | `cd backend-setup/dev; terraform apply` |
-| Setup backend (prod) | `cd backend-setup/prod; terraform apply` |
+| Setup backend (dev) | `cd infra-setup-pre-terraform/dev; terraform apply` |
+| Setup backend (prod) | `cd infra-setup-pre-terraform/prod; terraform apply` |
 | Deploy to dev | `cd env-dev; terraform apply` |
 | Deploy to staging | `cd env-staging; terraform apply` |
 | Deploy to prod | `cd env-prod; terraform apply` |

@@ -37,3 +37,26 @@ variable "certificate_arn" {
   type        = string
   default     = ""
 }
+
+# ------------------------------------------------------------------------------
+# Backend Service Variables
+# ------------------------------------------------------------------------------
+variable "auth_service_image" {
+  description = "Docker image for Auth Service"
+  default     = "nginx:latest" # Placeholder until real image is built
+}
+
+variable "gateway_service_image" {
+  description = "Docker image for Gateway Service"
+  default     = "nginx:latest" # Placeholder
+}
+
+variable "score_odd_service_image" {
+  description = "Docker image for Score Odd Service"
+  default     = "nginx:latest" # Placeholder
+}
+
+variable "enhancer_service_image" {
+  description = "Docker image for Enhancer Service"
+  default     = "nginx:latest" # Placeholder
+}

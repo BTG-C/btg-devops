@@ -23,6 +23,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -47,7 +51,50 @@ provider "aws" {
 }
 
 # ------------------------------------------------------------------------------
-# MFE Infrastructure Module
+# 1. Networking Module (VPC, Subnets)
+# ------------------------------------------------------------------------------
+module "networking" {
+  source = "../modules/networking"
+
+  project_name = var.project_name
+  environment  = var.environment
+  vpc_cidr     = "10.0.0.0/16" 
+}
+
+# ------------------------------------------------------------------------------
+# 2. DocumentDB Module (Shared Database Cluster)
+# ------------------------------------------------------------------------------
+module "documentdb" {
+  source = "../modules/documentdb"
+
+  project_name            = var.project_name
+  environment             = var.environment
+  vpc_id                  = module.networking.vpc_id
+  subnet_ids              = module.networking.private_subnet_ids
+  allowed_security_groups = [module.ecs_platform.ecs_tasks_sg_id]
+  
+  master_username         = "btgadmin"
+  instance_class          = "db.t3.medium"
+  instance_count          = 1
+  skip_final_snapshot     = true # Dev only - prod should be false
+}
+
+# ------------------------------------------------------------------------------
+# 3. ECS Platform Module (Cluster, ALB, Shared Components)
+# ------------------------------------------------------------------------------
+module "ecs_platform" {
+  source = "../modules/ecs-platform"
+
+  project_name    = var.project_name
+  environment     = var.environment
+  vpc_id          = module.networking.vpc_id
+  vpc_cidr        = module.networking.vpc_cidr
+  public_subnets  = module.networking.public_subnet_ids
+  private_subnets = module.networking.private_subnet_ids
+}
+
+# ------------------------------------------------------------------------------
+# 4. MFE Infrastructure Module (S3, CloudFront)
 # ------------------------------------------------------------------------------
 module "mfe_infrastructure" {
   source = "../modules/shared-mfe"
@@ -63,8 +110,208 @@ module "mfe_infrastructure" {
 }
 
 # ------------------------------------------------------------------------------
+# 5. Gateway Service (Public ALB)
+# ------------------------------------------------------------------------------
+module "gateway_service" {
+  source = "../modules/ecs-service"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  aws_region       = var.aws_region
+  vpc_id           = module.networking.vpc_id
+  cluster_id       = module.ecs_platform.cluster_id
+  service_name     = "gateway"
+  container_image  = var.gateway_service_image
+  container_port   = 8080
+  desired_count    = 1
+  cpu              = 512
+  memory           = 1024
+  
+  listener_arn      = module.ecs_platform.public_listener_arn
+  path_pattern      = "/*"
+  listener_priority = 100
+  health_check_path = "/actuator/health"
+  
+  security_group_id = module.ecs_platform.ecs_tasks_security_group_id
+  private_subnets   = module.networking.private_subnet_ids
+  
+  environment_variables = [
+    {
+      name  = "SPRING_PROFILES_ACTIVE"
+      value = "dev"
+    },
+    {
+      name  = "AUTH_SERVICE_URL"
+      value = "http://${module.ecs_platform.internal_alb_dns}"
+    }
+  ]
+  
+  secrets = [
+    {
+      name      = "MONGODB_PASSWORD"
+      valueFrom = module.documentdb.master_password_secret_arn
+    }
+  ]
+}
+
+# ------------------------------------------------------------------------------
+# 6. Auth Service (Internal ALB)
+# ------------------------------------------------------------------------------
+module "auth_service" {
+  source = "../modules/ecs-service"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  aws_region       = var.aws_region
+  vpc_id           = module.networking.vpc_id
+  cluster_id       = module.ecs_platform.cluster_id
+  service_name     = "auth"
+  container_image  = var.auth_service_image
+  container_port   = 8080
+  desired_count    = 1
+  cpu              = 256
+  memory           = 512
+  
+  listener_arn      = module.ecs_platform.internal_listener_arn
+  path_pattern      = "/auth/*"
+  listener_priority = 10
+  health_check_path = "/actuator/health"
+  
+  security_group_id = module.ecs_platform.ecs_tasks_security_group_id
+  private_subnets   = module.networking.private_subnet_ids
+  
+  environment_variables = [
+    {
+      name  = "SPRING_PROFILES_ACTIVE"
+      value = "dev"
+    },
+    {
+      name  = "MONGODB_HOST"
+      value = module.documentdb.endpoint
+    }
+  ]
+  
+  secrets = [
+    {
+      name      = "MONGODB_PASSWORD"
+      valueFrom = module.documentdb.master_password_secret_arn
+    }
+  ]
+}
+
+# ------------------------------------------------------------------------------
+# 7. Score Odd Service (Internal ALB)
+# ------------------------------------------------------------------------------
+module "score_odd_service" {
+  source = "../modules/ecs-service"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  aws_region       = var.aws_region
+  vpc_id           = module.networking.vpc_id
+  cluster_id       = module.ecs_platform.cluster_id
+  service_name     = "score-odd"
+  container_image  = var.score_odd_service_image
+  container_port   = 8080
+  desired_count    = 1
+  cpu              = 512
+  memory           = 1024
+  
+  listener_arn      = module.ecs_platform.internal_listener_arn
+  path_pattern      = "/score-odd/*"
+  listener_priority = 20
+  health_check_path = "/actuator/health"
+  
+  security_group_id = module.ecs_platform.ecs_tasks_security_group_id
+  private_subnets   = module.networking.private_subnet_ids
+  
+  environment_variables = [
+    {
+      name  = "SPRING_PROFILES_ACTIVE"
+      value = "dev"
+    },
+    {
+      name  = "MONGODB_HOST"
+      value = module.documentdb.endpoint
+    }
+  ]
+  
+  secrets = [
+    {
+      name      = "MONGODB_PASSWORD"
+      valueFrom = module.documentdb.master_password_secret_arn
+    }
+  ]
+}
+
+# ------------------------------------------------------------------------------
+# 8. Enhancer Service (Internal ALB)
+# ------------------------------------------------------------------------------
+module "enhancer_service" {
+  source = "../modules/ecs-service"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  aws_region       = var.aws_region
+  vpc_id           = module.networking.vpc_id
+  cluster_id       = module.ecs_platform.cluster_id
+  service_name     = "enhancer"
+  container_image  = var.enhancer_service_image
+  container_port   = 8080
+  desired_count    = 1
+  cpu              = 256
+  memory           = 512
+  
+  listener_arn      = module.ecs_platform.internal_listener_arn
+  path_pattern      = "/enhancer/*"
+  listener_priority = 30
+  health_check_path = "/actuator/health"
+  
+  security_group_id = module.ecs_platform.ecs_tasks_security_group_id
+  private_subnets   = module.networking.private_subnet_ids
+  
+  environment_variables = [
+    {
+      name  = "SPRING_PROFILES_ACTIVE"
+      value = "dev"
+    },
+    {
+      name  = "MONGODB_HOST"
+      value = module.documentdb.endpoint
+    }
+  ]
+  
+  secrets = [
+    {
+      name      = "MONGODB_PASSWORD"
+      valueFrom = module.documentdb.master_password_secret_arn
+    }
+  ]
+}
+
+# ------------------------------------------------------------------------------
 # Outputs (pass-through from module)
 # ------------------------------------------------------------------------------
+output "vpc_id" {
+  value = module.networking.vpc_id
+}
+
+output "ecs_cluster_name" {
+  value = module.ecs_platform.cluster_name
+}
+
+output "public_alb_dns" {
+  value = module.ecs_platform.public_alb_dns
+}
+
+output "internal_alb_dns" {
+  value = module.ecs_platform.internal_alb_dns
+}
+
+output "docdb_endpoint" {
+  value = module.documentdb.endpoint
+}
+
 output "s3_bucket_name" {
   description = "S3 bucket name for MFE hosting"
   value       = module.mfe_infrastructure.s3_bucket_name

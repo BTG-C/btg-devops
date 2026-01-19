@@ -1,7 +1,7 @@
 # ==============================================================================
 # BTG MFE Infrastructure - Staging Environment
 # ==============================================================================
-# AWS Account: Production (same account as prod, different environment)
+# AWS Account: Staging (separate account from dev/prod)
 # Region: us-east-1
 # Purpose: Pre-production testing with blue-green deployment
 # ==============================================================================
@@ -9,13 +9,13 @@
 terraform {
   required_version = ">= 1.0"
   
-  # Remote state backend - separate from dev
+  # Remote state backend - staging account
   backend "s3" {
-    bucket         = "btg-terraform-state-prod"
+    bucket         = "btg-terraform-state-staging"
     key            = "mfe-infrastructure/staging/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "btg-terraform-locks-prod"
+    dynamodb_table = "btg-terraform-locks-staging"
   }
   
   required_providers {
@@ -27,12 +27,12 @@ terraform {
 }
 
 # ------------------------------------------------------------------------------
-# AWS Provider - Production Account (Staging Environment)
+# AWS Provider - Staging Account
 # ------------------------------------------------------------------------------
 provider "aws" {
   region = var.aws_region
   
-  # Production AWS Account (staging namespace)
+  # Staging AWS Account
   # Use AWS CLI profile or GitHub OIDC to authenticate
   
   default_tags {
@@ -47,7 +47,49 @@ provider "aws" {
 }
 
 # ------------------------------------------------------------------------------
-# MFE Infrastructure Module
+# 1. Networking Module (VPC, Subnets)
+# ------------------------------------------------------------------------------
+module "networking" {
+  source = "../modules/networking"
+
+  project_name = var.project_name
+  environment  = var.environment
+  vpc_cidr     = "10.1.0.0/16" # Different CIDR for staging
+}
+
+# ------------------------------------------------------------------------------
+# 2. DocumentDB Module (Shared Database Cluster)
+# ------------------------------------------------------------------------------
+module "documentdb" {
+  source = "../modules/documentdb"
+
+  project_name            = var.project_name
+  environment             = var.environment
+  vpc_id                  = module.networking.vpc_id
+  subnet_ids              = module.networking.private_subnet_ids
+  allowed_security_groups = [module.ecs_platform.ecs_tasks_sg_id]
+  
+  instance_class          = "db.t3.medium" # Keep cost low for staging
+  instance_count          = 1              # Single instance for staging
+}
+
+# ------------------------------------------------------------------------------
+# 3. ECS Platform Module (Cluster, ALB, Shared Components)
+# ------------------------------------------------------------------------------
+module "ecs_platform" {
+  source = "../modules/ecs-platform"
+
+  project_name               = var.project_name
+  environment                = var.environment
+  vpc_id                     = module.networking.vpc_id
+  vpc_cidr                   = module.networking.vpc_cidr
+  public_subnets             = module.networking.public_subnet_ids
+  private_subnets            = module.networking.private_subnet_ids
+  enable_deletion_protection = true  # Staging: Protect shared environment
+}
+
+# ------------------------------------------------------------------------------
+# 4. MFE Infrastructure Module (S3, CloudFront)
 # ------------------------------------------------------------------------------
 module "mfe_infrastructure" {
   source = "../modules/shared-mfe"
@@ -64,6 +106,26 @@ module "mfe_infrastructure" {
 # ------------------------------------------------------------------------------
 # Outputs
 # ------------------------------------------------------------------------------
+output "vpc_id" {
+  value = module.networking.vpc_id
+}
+
+output "ecs_cluster_name" {
+  value = module.ecs_platform.cluster_name
+}
+
+output "public_alb_dns" {
+  value = module.ecs_platform.public_alb_dns
+}
+
+output "internal_alb_dns" {
+  value = module.ecs_platform.internal_alb_dns
+}
+
+output "docdb_endpoint" {
+  value = module.documentdb.endpoint
+}
+
 output "s3_bucket_name" {
   value = module.mfe_infrastructure.s3_bucket_name
 }

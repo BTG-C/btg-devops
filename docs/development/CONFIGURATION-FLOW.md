@@ -207,19 +207,26 @@ jobs:
 ### **Step 4: Workflow Replaces Placeholders**
 
 ```yaml
+# NOTE: This is a historical example. Current implementation uses:
+# 1. Terraform to create initial ECS service configuration
+# 2. GitHub Actions fetch live task definition from AWS
+# 3. Dynamic image update without template files
+
+# Example (for reference only - not used in actual workflows):
 - name: Prepare task definition
   run: |
     ENV_NAME="production"
     IMAGE_TAG="v1.2.3"
     
-    # Copy template
-    cp services/gateway-service/ecs/task-definition-template.json task-definition.json
+    # Fetch current task definition from AWS (actual approach)
+    aws ecs describe-task-definition \
+      --task-definition gateway-service \
+      --query taskDefinition > task-definition.json
     
-    # Replace placeholders with actual values
-    sed -i "s|{{IMAGE_TAG}}|$IMAGE_TAG|g" task-definition.json
-    sed -i "s|{{ENVIRONMENT}}|$ENV_NAME|g" task-definition.json
-    sed -i "s|{{AWS_REGION}}|${{ secrets.AWS_REGION }}|g" task-definition.json
-    sed -i "s|{{AWS_ACCOUNT_ID}}|${{ secrets.AWS_ACCOUNT_ID }}|g" task-definition.json
+    # Update image using jq
+    jq --arg IMAGE "ghcr.io/btg-c/gateway-service:$IMAGE_TAG" \
+       '.containerDefinitions[0].image = $IMAGE' \
+       task-definition.json > new-task-definition.json
 ```
 
 **Before:**

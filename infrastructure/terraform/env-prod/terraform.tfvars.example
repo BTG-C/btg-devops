@@ -1,0 +1,16 @@
+# ==============================================================================
+# Production Environment Variable Values
+# ==============================================================================
+# Copy this file to terraform.tfvars and update with actual values
+
+aws_region      = "us-east-1"
+project_name    = "btg"
+environment     = "prod"
+github_repo     = "BTG-C/btg-*-mfe"
+
+# Optional: Custom domain configuration
+# domain_name     = "app.yourcompany.com"
+# certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxx"
+
+# IMPORTANT: Update this with your team's email for cost alerts
+alert_email = "devops@yourcompany.com"

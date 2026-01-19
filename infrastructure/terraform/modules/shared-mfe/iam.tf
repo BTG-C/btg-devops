@@ -64,7 +64,17 @@ resource "aws_iam_role_policy" "github_actions_policy" {
         Effect = "Allow"
         Action = [
           "cloudfront:CreateInvalidation",
-          "cloudfront:GetDistribution",
+          "cloudfront:GetDistribution"
+        ]
+        Resource = concat(
+          [aws_cloudfront_distribution.blue_distribution.arn],
+          local.enable_blue_green ? [aws_cloudfront_distribution.green_distribution[0].arn] : []
+        )
+      },
+      {
+        # CloudFront List Permission (requires wildcard per AWS API)
+        Effect = "Allow"
+        Action = [
           "cloudfront:ListDistributions"
         ]
         Resource = "*"

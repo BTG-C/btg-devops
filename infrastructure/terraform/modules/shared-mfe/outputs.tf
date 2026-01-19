@@ -4,8 +4,8 @@
 
 # Primary Outputs
 output "s3_bucket_name" {
-  description = "Shell S3 bucket name where MFEs and shell application are hosted"
-  value       = aws_s3_bucket.mfe_bucket.id
+  description = "S3 bucket name where MFEs and shell application are hosted"
+  value       = aws_s3_bucket.mfe_assets.id
   sensitive   = false
 }
 

@@ -37,3 +37,9 @@ variable "certificate_arn" {
   type        = string
   default     = ""
 }
+
+variable "alert_email" {
+  description = "Email address for AWS Budget alerts"
+  type        = string
+  default     = "devops@btg-company.com"
+}
