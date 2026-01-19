@@ -1,6 +1,15 @@
-# DocumentDB Password Setup
+# Pre-Terraform Setup - Secrets & Certificates
 
 ## Overview
+
+This guide covers manual setup steps that must be completed **before running Terraform** in each AWS account:
+
+1. **DocumentDB Passwords** - Stored in AWS Secrets Manager
+2. **ACM SSL Certificates** - For HTTPS on ALB and CloudFront
+
+---
+
+## 1. DocumentDB Password Setup
 
 For maximum security, DocumentDB passwords are **manually created** in AWS Secrets Manager and are **never stored in Terraform state**.
 
@@ -78,6 +87,121 @@ aws secretsmanager create-secret `
     --secret-string "{\"password\":\"$password\"}" `
     --region us-east-1
 ```
+
+---
+
+## 2. ACM SSL Certificate Setup
+
+**ACM (AWS Certificate Manager)** provides **free SSL/TLS certificates** for HTTPS on ALB and CloudFront.
+
+### Why ACM?
+
+✅ **Free** for AWS services (ALB, CloudFront, API Gateway)  
+✅ **Auto-renewal** every 13 months (zero maintenance)  
+✅ **Wildcard support** covers all subdomains  
+✅ **TLS 1.3** latest security standards  
+
+### Certificate Requirements
+
+| Environment | Required? | Domain Example |
+|-------------|-----------|----------------|
+| **dev** | Optional | `dev.yourdomain.com` |
+| **staging** | Recommended | `staging.yourdomain.com` |
+| **prod** | **Required** | `yourdomain.com` |
+
+### Create Certificates
+
+**Development (Optional):**
+```bash
+aws acm request-certificate \
+  --domain-name "dev.yourdomain.com" \
+  --subject-alternative-names "*.dev.yourdomain.com" \
+  --validation-method DNS \
+  --region us-east-1 \
+  --profile btg-dev
+```
+
+**Staging:**
+```bash
+aws acm request-certificate \
+  --domain-name "staging.yourdomain.com" \
+  --subject-alternative-names "*.staging.yourdomain.com" \
+  --validation-method DNS \
+  --region us-east-1 \
+  --profile btg-staging
+```
+
+**Production:**
+```bash
+aws acm request-certificate \
+  --domain-name "yourdomain.com" \
+  --subject-alternative-names "*.yourdomain.com" "www.yourdomain.com" \
+  --validation-method DNS \
+  --region us-east-1 \
+  --profile btg-prod
+```
+
+### Validate Certificate
+
+1. **Go to ACM Console** → Certificate Manager
+2. **Copy DNS validation records** (CNAME name and value)
+3. **Add to your domain DNS** (Route53 or external DNS provider)
+4. **Wait 5-10 minutes** for validation
+5. **Status changes to "Issued"**
+6. **Copy certificate ARN**: `arn:aws:acm:us-east-1:123456789:certificate/abc-123`
+
+### Add Certificate to Terraform
+
+Create `terraform.tfvars` in each environment folder:
+
+**env-dev/terraform.tfvars** (optional):
+```hcl
+certificate_arn = ""  # Leave empty for HTTP-only dev
+```
+
+**env-staging/terraform.tfvars**:
+```hcl
+certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/abc-staging"
+```
+
+**env-prod/terraform.tfvars**:
+```hcl
+certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/abc-prod"
+```
+
+### What It Enables
+
+**With Certificate:**
+- ✅ Public ALB serves HTTPS on port 443
+- ✅ HTTP (port 80) automatically redirects to HTTPS
+- ✅ CloudFront uses custom domain with SSL
+- ✅ Browser shows padlock icon (secure)
+
+**Without Certificate (dev only):**
+- ❌ HTTP only on port 80
+- ❌ CloudFront uses default AWS domain
+
+### Important Notes
+
+- **Region must be us-east-1** - Required for CloudFront, works for ALB
+- **DNS validation recommended** - Faster than email validation
+- **One certificate per AWS account** - Create in each account separately
+- **Zero cost** - ACM certificates are always free for AWS services
+
+---
+
+## Pre-Deployment Checklist
+
+**Per AWS Account:**
+- [ ] DocumentDB password created in Secrets Manager
+- [ ] ACM certificate requested (staging/prod)
+- [ ] DNS validation records added
+- [ ] Certificate status: "Issued"
+- [ ] Certificate ARN added to `terraform.tfvars`
+- [ ] S3 backend bucket created (from main README)
+- [ ] DynamoDB lock table created (from main README)
+
+Now you're ready to run Terraform!
 
 ### Viewing the Secret (if needed)
 ```powershell

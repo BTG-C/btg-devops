@@ -126,3 +126,90 @@ aws s3api list-object-versions --bucket btg-terraform-state-dev --prefix mfe-inf
 # Download specific version
 aws s3api get-object --bucket btg-terraform-state-dev --key mfe-infrastructure/dev/terraform.tfstate --version-id <VERSION_ID> terraform.tfstate.backup
 ```
+
+## SSL/TLS Certificate Setup (ACM)
+
+**ACM (AWS Certificate Manager)** provides free SSL/TLS certificates for HTTPS on Public ALB and CloudFront.
+
+### Certificate Requirements
+
+| Environment | Domain Example | Required? |
+|-------------|----------------|-----------|
+| **dev** | `dev.yourdomain.com` | Optional (HTTP works) |
+| **staging** | `staging.yourdomain.com` | Recommended |
+| **prod** | `yourdomain.com` | **Required** |
+
+### Create Certificates Per Account
+
+**Development Account (Optional):**
+```bash
+aws acm request-certificate \
+  --domain-name "dev.yourdomain.com" \
+  --subject-alternative-names "*.dev.yourdomain.com" \
+  --validation-method DNS \
+  --region us-east-1 \
+  --profile btg-dev
+```
+
+**Staging Account:**
+```bash
+aws acm request-certificate \
+  --domain-name "staging.yourdomain.com" \
+  --subject-alternative-names "*.staging.yourdomain.com" \
+  --validation-method DNS \
+  --region us-east-1 \
+  --profile btg-staging
+```
+
+**Production Account:**
+```bash
+aws acm request-certificate \
+  --domain-name "yourdomain.com" \
+  --subject-alternative-names "*.yourdomain.com" "www.yourdomain.com" \
+  --validation-method DNS \
+  --region us-east-1 \
+  --profile btg-prod
+```
+
+### Validate Certificate
+
+1. **Add DNS CNAME records** shown in ACM console to your domain
+2. **Wait 5-10 minutes** for validation
+3. **Certificate status** changes to "Issued"
+4. **Copy ARN**: `arn:aws:acm:us-east-1:123456789:certificate/abc-123`
+
+### Add to Terraform
+
+Create `terraform.tfvars` in each environment:
+
+```hcl
+# env-prod/terraform.tfvars
+certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/abc-123"
+```
+
+### What It Enables
+
+**With Certificate:**
+- ✅ Public ALB serves HTTPS on port 443
+- ✅ HTTP (port 80) redirects to HTTPS
+- ✅ CloudFront uses custom domain with SSL
+- ✅ Browser shows padlock (secure)
+
+**Without Certificate (dev only):**
+- HTTP only on port 80
+- CloudFront uses default domain
+
+### Certificate Features
+
+- 🆓 **Free** for AWS services (ALB, CloudFront, API Gateway)
+- 🔄 **Auto-renewal** every 13 months (zero maintenance)
+- 🌐 **Wildcard support** (`*.yourdomain.com` covers all subdomains)
+- 🔒 **TLS 1.3** latest security standards
+- 🚀 **Instant attachment** to ALB/CloudFront
+
+### Important Notes
+
+- **Region: us-east-1 ONLY** - Required for CloudFront, works for ALB
+- **DNS validation recommended** - Faster than email validation
+- **Certificates are account-specific** - Create in each AWS account
+- **Zero cost** - ACM public certificates are always free
