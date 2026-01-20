@@ -1,0 +1,14 @@
+{
+    "envVars":  {
+                    "AUTH_SERVER_BASE_URL":  "https://api-staging.btgcric.com",
+                    "CORS_ALLOWED_ORIGINS":  "https://staging.btgcric.com",
+                    "SESSION_COOKIE_DOMAIN":  ".btgcric.com",
+                    "SESSION_COOKIE_SECURE":  "true",
+                    "COOKIE_SECURE":  "true",
+                    "LOG_LEVEL":  "INFO",
+                    "SPRING_PROFILES_ACTIVE":  "staging"
+                },
+    "secrets":  {
+                    "MONGODB_AUTH_URI":  "btg/staging/mongodb-auth-uri"
+                }
+}

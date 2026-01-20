@@ -1,25 +1,3 @@
-# ==============================================================================
-# Gateway Service Deployment Pipeline
-# ==============================================================================
-# Runs in: btg-devops repository
-# Purpose: Deploy Gateway Service Docker image to AWS ECS
-#
-# ------------------------------------------------------------------------------
-# 🔐 CRITICAL SECRETS SETUP
-# ------------------------------------------------------------------------------
-# The following secrets must be added to THIS repository:
-#
-# 1. AWS Credentials:
-#    - AWS_ACCESS_KEY_ID
-#    - AWS_SECRET_ACCESS_KEY
-#    - AWS_REGION (e.g., us-east-1)
-#    - AWS_ACCOUNT_ID
-#
-# 2. ECS Infrastructure:
-#    - GATEWAY_CLUSTER: Name of the ECS Cluster
-#    - GATEWAY_SERVICE: Name of the ECS Service
-# ==============================================================================
-
 name: Gateway Service Deployment
 
 on:
@@ -71,65 +49,49 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      - name: Prepare task definition
+        run: |
+          cp services/gateway-service/ecs/task-definition-template.json task-def.json
+          
+          # Replace placeholders
+          sed -i "s/{{ENVIRONMENT}}/${{ env.ENV_NAME }}/g" task-def.json
+          sed -i "s|{{IMAGE_TAG}}|$IMAGE_TAG|g" task-def.json
+          sed -i "s/{{AWS_ACCOUNT_ID}}/${{ secrets.AWS_ACCOUNT_ID }}/g" task-def.json
+          sed -i "s/{{AWS_REGION}}/${{ secrets.AWS_REGION }}/g" task-def.json
+          
+          # Inject environment variables from config
+          CONFIG_FILE="services/gateway-service/config/${{ env.ENV_NAME }}.json"
+          CONFIG_ENV=$(jq -r '.envVars | to_entries | map({name: .key, value: .value})' $CONFIG_FILE)
+          jq --argjson env "$CONFIG_ENV" '.containerDefinitions[0].environment = $env' task-def.json > task-def-updated.json
+          mv task-def-updated.json task-def.json
+          
       - name: Deploy to ECS
         run: |
-          echo "🚀 Deploying to ECS Cluster: ${{ secrets.GATEWAY_CLUSTER }}"
-          echo "Service: ${{ secrets.GATEWAY_SERVICE }}"
+          echo "🚀 Deploying to ECS Cluster: btg-${{ env.ENV_NAME }}-cluster"
+          echo "Service: btg-${{ env.ENV_NAME }}-gateway-service"
           echo "Image: ghcr.io/btg-c/btg-gateway-service:$IMAGE_TAG"
           
-          # 1. Fetch current task definition
-          # Allows us to preserve environment variables/secrets set in AWS console
-          aws ecs describe-task-definition \
-            --task-definition ${{ secrets.GATEWAY_SERVICE }} \
-            --query taskDefinition > task-def.json
-          
-          # 2. Update image in container definitions using jq
-          # Cleans up read-only fields to make it valid for registration
-          jq --arg IMAGE "ghcr.io/btg-c/btg-gateway-service:$IMAGE_TAG" \
-             '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
-             task-def.json > new-task-def.json
-             
-          # 3. Register new task definition
+          # Register new task definition
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://new-task-def.json \
+            --cli-input-json file://task-def.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
             
           echo "✅ Registered Task Definition: $NEW_TASK_DEF_ARN"
           
-          # 4. Update Service
+          # Update Service
           aws ecs update-service \
-            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
-            --service ${{ secrets.GATEWAY_SERVICE }} \
+            --cluster btg-${{ env.ENV_NAME }}-cluster \
+            --service btg-${{ env.ENV_NAME }}-gateway-service \
             --task-definition $NEW_TASK_DEF_ARN \
             --force-new-deployment
             
           echo "⏳ Waiting for deployment to stabilize..."
           aws ecs wait services-stable \
-            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
-            --services ${{ secrets.GATEWAY_SERVICE }}
+            --cluster btg-${{ env.ENV_NAME }}-cluster \
+            --services btg-${{ env.ENV_NAME }}-gateway-service
             
           echo "✅ Deployment Successful!"
-
-            --output text)
-          
-          if [ -z "$TASK_ARNS" ]; then
-            echo "No running tasks found"
-            exit 1
-          fi
-          
-          TASK_HEALTH=$(aws ecs describe-tasks \
-            --cluster ${{ secrets.GATEWAY_CLUSTER }} \
-            --tasks $TASK_ARNS \
-            --query 'tasks[0].healthStatus' \
-            --output text)
-          
-          echo "Task health status: $TASK_HEALTH"
-          
-          if [ "$TASK_HEALTH" != "HEALTHY" ]; then
-            echo "Task is not healthy"
-            exit 1
-          fi
       
       - name: Smoke test
         run: |
@@ -164,7 +126,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** $ENV_NAME" >> $GITHUB_STEP_SUMMARY
           echo "- **Image Tag:** $IMAGE_TAG" >> $GITHUB_STEP_SUMMARY
-          echo "- **Task Definition:** ${{ steps.task-def.outputs.task_definition_arn }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cluster:** ${{ secrets.GATEWAY_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service:** ${{ secrets.GATEWAY_SERVICE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster:** btg-$ENV_NAME-cluster" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** btg-$ENV_NAME-gateway-service" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

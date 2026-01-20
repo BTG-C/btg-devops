@@ -14,7 +14,14 @@ Thumbs.db
 .terraform.lock.hcl
 terraform.tfstate
 terraform.tfstate.backup
-*.tfvars
+
+# Terraform Variables
+# Auto-loaded file that may contain secrets
+terraform.tfvars
+# But allow environment-specific .tfvars for documentation
+!**/dev.tfvars
+!**/staging.tfvars
+!**/prod.tfvars
 !example.tfvars
 node_modules/
 dist/

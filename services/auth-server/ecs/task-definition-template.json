@@ -1,0 +1,44 @@
+{
+  "family": "btg-{{ENVIRONMENT}}-auth-server",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::{{AWS_ACCOUNT_ID}}:role/btg-{{ENVIRONMENT}}-auth-server-execution-role",
+  "taskRoleArn": "arn:aws:iam::{{AWS_ACCOUNT_ID}}:role/btg-{{ENVIRONMENT}}-auth-server-task-role",
+  "containerDefinitions": [
+    {
+      "name": "auth-server",
+      "image": "ghcr.io/btg-c/btg-auth-server:{{IMAGE_TAG}}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [],
+      "secrets": [
+        {
+          "name": "MONGODB_AUTH_URI",
+          "valueFrom": "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:secret:btg/{{ENVIRONMENT}}/mongodb-auth-uri"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/btg-{{ENVIRONMENT}}-auth-server",
+          "awslogs-region": "{{AWS_REGION}}",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

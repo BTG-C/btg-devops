@@ -15,6 +15,9 @@ resource "aws_lb_target_group" "main" {
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
+  
+  # Use least outstanding requests for better load distribution
+  load_balancing_algorithm_type = "least_outstanding_requests"
 
   health_check {
     healthy_threshold   = "3"

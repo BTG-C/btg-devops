@@ -1,0 +1,10 @@
+{
+    "envVars":  {
+                    "LOG_LEVEL":  "INFO",
+                    "SPRING_PROFILES_ACTIVE":  "staging"
+                },
+    "secrets":  {
+                    "MONGODB_URI":  "btg/staging/mongodb-uri",
+                    "API_KEY":  "btg/staging/score-odd-api-key"
+                }
+}

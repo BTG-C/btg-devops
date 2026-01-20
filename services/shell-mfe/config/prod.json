@@ -1,0 +1,7 @@
+{
+  "backendBaseUrl": "https://api.btgcric.com",
+  "environment": "production",
+  "mfes": {
+    "enhancer": "https://btgcric.com/mfe-bundles/enhancer/remoteEntry.json"
+  }
+}

@@ -1,265 +1,419 @@
-# Configuration Flow: GitHub Environments → Task Definition → ECS
+# Configuration Flow
 
-**Understanding how configuration values flow from GitHub to running containers**
+**How configuration flows from Git to running containers in AWS ECS**
 
 ---
 
-## Overview
-
-The deployment workflow acts as a **bridge** between GitHub Environment secrets and AWS ECS, translating configuration values and injecting them into task definitions.
+## Simple Overview
 
 ```
-┌─────────────────────┐
-│ GitHub Environments │  (Secrets storage)
-│  - AWS_REGION       │
-│  - AWS_ACCOUNT_ID   │
-│  - GATEWAY_CLUSTER  │
-└──────────┬──────────┘
-           │
-           │ ① Workflow reads secrets
-           ↓
-┌─────────────────────┐
-│ Deployment Workflow │  (Bridge/Translator)
-│ gateway-service-    │
-│ deployment.yml      │
-└──────────┬──────────┘
-           │
-           │ ② sed replaces {{PLACEHOLDERS}}
-           ↓
-┌─────────────────────┐
-│ Task Definition     │  (Template → Final)
-│ template.json       │
-└──────────┬──────────┘
-           │
-           │ ③ aws ecs register-task-definition
-           ↓
-┌─────────────────────┐
-│ AWS ECS Service     │  (Runtime)
-│ Container starts    │
-│ with env vars       │
-└─────────────────────┘
+App Repo                DevOps Repo               AWS
+┌──────────┐           ┌──────────┐           ┌─────────┐
+│ Build    │──push────>│ Workflow │──deploy──>│   ECS   │
+│ Docker   │  event    │ Injects  │           │ Service │
+│ Image    │           │ Config   │           └─────────┘
+└──────────┘           └──────────┘
+                            │
+                            │ reads
+                            ↓
+                     services/{service}/
+                     ├── config/
+                     │   ├── dev.json
+                     │   ├── staging.json
+                     │   └── prod.json
+                     └── ecs/
+                         └── task-definition-template.json
 ```
 
 ---
 
-## Configuration Types
+## Configuration Structure
 
-### **1. Non-Sensitive Values (GitHub Environment → Workflow → Task Definition)**
+### 1. Config Files (Per Environment)
 
-**Source:** GitHub Environments (UI)
-```
-Settings → Environments → production → Secrets:
-  AWS_REGION: us-east-1
-  AWS_ACCOUNT_ID: 987654321098
-  GATEWAY_CLUSTER: btg-prod-cluster
-```
+**Location:** `services/{service}/config/{env}.json`
 
-**Task Definition Template:**
+**Purpose:** Store environment-specific, non-sensitive values
+
+**Example:** `services/gateway-service/config/dev.json`
 ```json
 {
-  "environment": [
-    {"name": "ENVIRONMENT", "value": "{{ENVIRONMENT}}"},
-    {"name": "AWS_REGION", "value": "{{AWS_REGION}}"}
-  ]
+  "envVars": {
+    "AUTH_SERVER_URL": "http://internal-btg-dev-auth-alb.us-east-1.elb.amazonaws.com:9000",
+    "GATEWAY_URL": "https://api-dev.btgcric.com",
+    "LOG_LEVEL": "DEBUG"
+  },
+  "secrets": {
+    "MONGODB_URI": "btg/dev/mongodb-uri",
+    "GATEWAY_CLIENT_SECRET": "btg/dev/gateway-client-secret"
+  }
 }
 ```
 
-**Workflow Replaces:**
-```yaml
-- name: Prepare task definition
-  run: |
-    sed -i "s|{{ENVIRONMENT}}|production|g" task-definition.json
-    sed -i "s|{{AWS_REGION}}|${{ secrets.AWS_REGION }}|g" task-definition.json
-```
+**What goes here:**
+- ✅ Service URLs (internal ALBs, public gateways)
+- ✅ CORS origins
+- ✅ Log levels
+- ✅ Feature flags
+- ✅ Secret **references** (paths in Secrets Manager)
+- ❌ Actual passwords (use Secrets Manager)
 
-**Final Task Definition (sent to AWS):**
+---
+
+### 2. Task Definition Templates
+
+**Location:** `services/{service}/ecs/task-definition-template.json`
+
+**Purpose:** ECS task definition with placeholders
+
+**Placeholders:**
+- `{{ENVIRONMENT}}` → `dev`, `staging`, `prod`
+- `{{IMAGE_TAG}}` → Docker image tag from build
+- `{{AWS_ACCOUNT_ID}}` → AWS account number
+- `{{AWS_REGION}}` → AWS region
+
+**Example:**
 ```json
 {
-  "environment": [
-    {"name": "ENVIRONMENT", "value": "production"},
-    {"name": "AWS_REGION", "value": "us-east-1"}
-  ]
+  "family": "btg-{{ENVIRONMENT}}-gateway-service",
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [{
+    "name": "gateway-service",
+    "image": "ghcr.io/btg-c/btg-gateway-service:{{IMAGE_TAG}}",
+    "environment": [
+      {"name": "SPRING_PROFILES_ACTIVE", "value": "{{ENVIRONMENT}}"},
+      {"name": "AWS_REGION", "value": "{{AWS_REGION}}"}
+    ],
+    "secrets": [
+      {
+        "name": "MONGODB_URI",
+        "valueFrom": "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:secret:btg/{{ENVIRONMENT}}/mongodb-uri"
+      }
+    ]
+  }]
 }
 ```
 
-**Container Runtime:**
+---
+
+### 3. Secrets in AWS Secrets Manager
+
+**Purpose:** Store actual sensitive values
+
+**Naming Convention:** `btg/{environment}/{secret-name}`
+
+**Examples:**
 ```bash
-# ECS injects these as environment variables
-ENVIRONMENT=production
-AWS_REGION=us-east-1
+# MongoDB connection strings
+btg/dev/mongodb-uri
+btg/staging/mongodb-uri
+btg/prod/mongodb-uri
+
+# OAuth client secrets
+btg/dev/gateway-client-secret
+btg/staging/gateway-client-secret
+btg/prod/gateway-client-secret
 ```
 
----
-
-### **2. Sensitive Values (AWS Secrets Manager → ECS → Container)**
-
-**Source:** AWS Secrets Manager
+**How to create:**
 ```bash
 aws secretsmanager create-secret \
-  --name btg/prod/mongodb-uri \
-  --secret-string "mongodb://prod-user:SecurePassword123@prod.btg.com:27017/btg"
-```
-
-**Task Definition Template:**
-```json
-{
-  "secrets": [
-    {
-      "name": "MONGODB_URI",
-      "valueFrom": "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:secret:btg/{{ENVIRONMENT}}/mongodb-uri"
-    }
-  ]
-}
-```
-
-**Workflow Replaces (only the ARN path, not the secret value):**
-```yaml
-- name: Prepare task definition
-  run: |
-    sed -i "s|{{AWS_REGION}}|us-east-1|g" task-definition.json
-    sed -i "s|{{AWS_ACCOUNT_ID}}|987654321098|g" task-definition.json
-    sed -i "s|{{ENVIRONMENT}}|production|g" task-definition.json
-```
-
-**Final Task Definition:**
-```json
-{
-  "secrets": [
-    {
-      "name": "MONGODB_URI",
-      "valueFrom": "arn:aws:secretsmanager:us-east-1:987654321098:secret:btg/production/mongodb-uri"
-    }
-  ]
-}
-```
-
-**Container Runtime:**
-```bash
-# ECS uses task role to fetch from Secrets Manager at container start
-# Never passes through GitHub
-MONGODB_URI=mongodb://prod-user:SecurePassword123@prod.btg.com:27017/btg
+  --name btg/dev/mongodb-uri \
+  --secret-string "mongodb://user:pass@host:27017/db"
 ```
 
 ---
 
-## Step-by-Step Flow
+## Deployment Flow
 
-### **Step 1: GitHub Environment Configuration**
+### Step 1: Trigger Deployment
 
-**Location:** `btg-devops` repository → Settings → Environments → `production`
-
-**Configured values:**
+**From app repo** (e.g., `btg-gateway-service`):
 ```yaml
-AWS_ACCOUNT_ID: "987654321098"
-AWS_REGION: "us-east-1"
-AWS_ROLE_ARN: "arn:aws:iam::987654321098:role/github-actions-prod"
-GATEWAY_CLUSTER: "btg-prod-cluster"
-GATEWAY_SERVICE: "btg-gateway-service"
-GATEWAY_ALB_URL: "https://api.btg.com"
-```
-
-**Protection rules:**
-- ✅ Required reviewers: 2
-- ✅ Wait timer: 5 minutes
-- ✅ Branch restriction: `main` only
-
----
-
-### **Step 2: Workflow Triggered**
-
-**Trigger:** Repository dispatch from app repo after Docker image build
-
-```yaml
-# In btg-gateway-service artifact-pipeline.yml
-- name: Trigger DevOps deployment
+- name: Trigger deployment
   run: |
-    curl -X POST \
-      https://api.github.com/repos/BTG-C/btg-devops/dispatches \
+    curl -X POST https://api.github.com/repos/BTG-C/btg-devops/dispatches \
       -d '{
         "event_type": "deploy-gateway-service",
         "client_payload": {
-          "environment": "production",
-          "image_tag": "v1.2.3"
+          "environment": "dev",
+          "image_tag": "sha-abc123"
         }
       }'
 ```
 
----
-
-### **Step 3: Workflow Reads GitHub Environment Secrets**
+### Step 2: Workflow Prepares Task Definition
 
 **Workflow:** `.github/workflows/gateway-service-deployment.yml`
 
 ```yaml
-jobs:
-  deploy:
-    environment: production  # ← Grants access to production secrets
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
+- name: Load configuration
+  run: |
+    CONFIG_FILE="services/gateway-service/config/${{ env.ENV_NAME }}.json"
+    jq -r '.envVars | to_entries[] | "\(.key)=\(.value)"' $CONFIG_FILE > env_vars.txt
+
+- name: Prepare task definition
+  run: |
+    # Copy template
+    cp services/gateway-service/ecs/task-definition-template.json task-def.json
+    
+    # Replace placeholders
+    sed -i "s/{{ENVIRONMENT}}/dev/g" task-def.json
+    sed -i "s|{{IMAGE_TAG}}|sha-abc123|g" task-def.json
+    sed -i "s/{{AWS_ACCOUNT_ID}}/123456789012/g" task-def.json
+    sed -i "s/{{AWS_REGION}}/us-east-1/g" task-def.json
+    
+    # Inject environment variables from config
+    CONFIG_ENV=$(jq -r '.envVars | to_entries | map({name: .key, value: .value})' $CONFIG_FILE)
+    TEMP_ENV=$(jq '.containerDefinitions[0].environment' task-def.json)
+    MERGED_ENV=$(jq -n --argjson a "$TEMP_ENV" --argjson b "$CONFIG_ENV" '$a + $b | unique_by(.name)')
+    jq --argjson env "$MERGED_ENV" '.containerDefinitions[0].environment = $env' task-def.json > final-task-def.json
+```
+
+**Result:** Final task definition with:
+- ✅ Correct image tag
+- ✅ Environment-specific URLs and settings
+- ✅ Secret ARNs pointing to correct environment
+
+### Step 3: Deploy to ECS
+
+```yaml
+- name: Deploy to ECS
+  run: |
+    # Register new task definition
+    NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+      --cli-input-json file://final-task-def.json \
+      --query 'taskDefinition.taskDefinitionArn' \
+      --output text)
+    
+    # Update service with new task definition
+    aws ecs update-service \
+      --cluster btg-dev-cluster \
+      --service btg-dev-gateway-service \
+      --task-definition $NEW_TASK_DEF_ARN \
+      --force-new-deployment
+    
+    # Wait for stability
+    aws ecs wait services-stable \
+      --cluster btg-dev-cluster \
+      --services btg-dev-gateway-service
+```
+
+### Step 4: ECS Fetches Secrets
+
+When container starts:
+1. ECS Task Execution Role reads secret ARNs from task definition
+2. Fetches actual secret values from Secrets Manager
+3. Injects as environment variables into container
+
+**Container sees:**
+```bash
+MONGODB_URI=mongodb://user:SecurePass123@prod-db:27017/btg
+GATEWAY_CLIENT_SECRET=super-secret-client-value
+```
+
+---
+
+## Configuration Change Workflow
+
+### Updating Non-Sensitive Values
+
+**Example:** Change log level from DEBUG to INFO
+
+1. **Edit config file:**
+```bash
+# services/gateway-service/config/dev.json
+{
+  "envVars": {
+    "LOG_LEVEL": "INFO"  # Changed from DEBUG
+  }
+}
+```
+
+2. **Commit and push:**
+```bash
+git add services/gateway-service/config/dev.json
+git commit -m "Change gateway log level to INFO in dev"
+git push
+```
+
+3. **Redeploy service:**
+   - Trigger deployment from app repo, OR
+   - Manual workflow dispatch in `btg-devops`
+
+### Updating Secrets
+
+**Example:** Rotate MongoDB password
+
+1. **Update secret in AWS:**
+```bash
+aws secretsmanager update-secret \
+  --secret-id btg/dev/mongodb-uri \
+  --secret-string "mongodb://user:NewPassword456@host:27017/db"
+```
+
+2. **Force ECS to restart containers:**
+```bash
+aws ecs update-service \
+  --cluster btg-dev-cluster \
+  --service btg-dev-gateway-service \
+  --force-new-deployment
+```
+
+**Note:** No code or config changes needed - ECS fetches new secret on container start
+
+---
+
+## Best Practices
+
+### ✅ DO
+
+- **Version control config changes:** Commit config files to Git
+- **Use PR reviews:** Config changes go through pull requests
+- **Separate secrets:** Never put passwords in config files
+- **Use consistent naming:** Follow `btg/{env}/{secret}` pattern
+- **Test in dev first:** Validate changes before staging/prod
+
+### ❌ DON'T
+
+- **Hard-code secrets:** Always use Secrets Manager
+- **Skip environments:** Don't deploy directly to prod
+- **Duplicate config:** Use template + config files, not separate templates per environment
+- **Over-engineer:** Keep config structure simple
+
+---
+
+## Troubleshooting
+
+### Container fails to start with "Cannot connect to database"
+
+**Check:**
+1. Secret exists in Secrets Manager
+2. Secret ARN in task definition is correct
+3. Task Role has `secretsmanager:GetSecretValue` permission
+4. Secret value format is correct (connection string syntax)
+
+### Config changes not applied
+
+**Solution:**
+1. Verify config file was committed and pushed
+2. Check workflow logs - was config loaded?
+3. Ensure `sed` replacements worked (check task definition in ECS console)
+4. Force new deployment if task definition wasn't updated
+
+### Different values in dev vs prod
+
+**Expected:** This is by design. Compare config files:
+```bash
+diff services/gateway-service/config/dev.json \
+     services/gateway-service/config/prod.json
+```
+
+---
+
+## Quick Reference
+
+### Config File Structure
+```json
+{
+  "envVars": {
+    "KEY": "value"
+  },
+  "secrets": {
+    "SECRET_NAME": "btg/{env}/secret-path"
+  }
+}
+```
+
+### Task Definition Placeholders
+- `{{ENVIRONMENT}}` - Environment name
+- `{{IMAGE_TAG}}` - Docker image version
+- `{{AWS_ACCOUNT_ID}}` - AWS account ID
+- `{{AWS_REGION}}` - AWS region
+
+### Service Naming
+- Cluster: `btg-{env}-cluster`
+- Service: `btg-{env}-{service-name}`
+- Task Family: `btg-{env}-{service-name}`
+
+### Secret Naming
+- Pattern: `btg/{environment}/{secret-name}`
+- Example: `btg/prod/mongodb-uri`
+
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}  # ← Read from GitHub Environment
           aws-region: ${{ secrets.AWS_REGION }}        # ← Read from GitHub Environment
 ```
 
 ---
 
-### **Step 4: Workflow Replaces Placeholders**
+### **Step 4: Workflow Updates Task Definition**
+
+**Current Implementation:**
 
 ```yaml
-# NOTE: This is a historical example. Current implementation uses:
-# 1. Terraform to create initial ECS service configuration
-# 2. GitHub Actions fetch live task definition from AWS
-# 3. Dynamic image update without template files
-
-# Example (for reference only - not used in actual workflows):
-- name: Prepare task definition
+- name: Deploy to ECS
   run: |
-    ENV_NAME="production"
-    IMAGE_TAG="v1.2.3"
+    IMAGE_TAG="${{ github.event.client_payload.image_tag }}"
     
-    # Fetch current task definition from AWS (actual approach)
+    # 1. Fetch current task definition from AWS
+    # This preserves ALL existing configuration (env vars, secrets, resources)
     aws ecs describe-task-definition \
-      --task-definition gateway-service \
-      --query taskDefinition > task-definition.json
+      --task-definition ${{ secrets.GATEWAY_SERVICE }} \
+      --query taskDefinition > task-def.json
     
-    # Update image using jq
-    jq --arg IMAGE "ghcr.io/btg-c/gateway-service:$IMAGE_TAG" \
-       '.containerDefinitions[0].image = $IMAGE' \
-       task-definition.json > new-task-definition.json
+    # 2. Update ONLY the image field using jq
+    # Everything else remains unchanged
+    jq --arg IMAGE "ghcr.io/btg-c/btg-gateway-service:$IMAGE_TAG" \
+       '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+       task-def.json > new-task-def.json
 ```
 
-**Before:**
+**Example: What Gets Updated**
+
+**Original Task Definition (from Terraform initial setup):**
 ```json
 {
-  "image": "ghcr.io/btg-c/btg-gateway-service:{{IMAGE_TAG}}",
+  "family": "btg-prod-gateway",
+  "image": "ghcr.io/btg-c/btg-gateway-service:v1.0.0",
   "environment": [
-    {"name": "AWS_REGION", "value": "{{AWS_REGION}}"}
+    {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
+    {"name": "AWS_REGION", "value": "us-east-1"},
+    {"name": "AUTH_SERVER_URL", "value": "http://internal-auth-alb:9000"}
   ],
   "secrets": [
     {
-      "name": "MONGODB_URI",
-      "valueFrom": "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:secret:btg/{{ENVIRONMENT}}/mongodb-uri"
+      "name": "GATEWAY_CLIENT_SECRET",
+      "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:btg/prod/gateway-client-secret"
     }
   ]
 }
 ```
 
-**After:**
+**After Workflow Updates (new revision):**
 ```json
 {
-  "image": "ghcr.io/btg-c/btg-gateway-service:v1.2.3",
+  "family": "btg-prod-gateway",
+  "image": "ghcr.io/btg-c/btg-gateway-service:v1.2.3",  // ← ONLY THIS CHANGED
   "environment": [
-    {"name": "AWS_REGION", "value": "us-east-1"}
+    {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
+    {"name": "AWS_REGION", "value": "us-east-1"},
+    {"name": "AUTH_SERVER_URL", "value": "http://internal-auth-alb:9000"}
   ],
   "secrets": [
     {
-      "name": "MONGODB_URI",
-      "valueFrom": "arn:aws:secretsmanager:us-east-1:987654321098:secret:btg/production/mongodb-uri"
+      "name": "GATEWAY_CLIENT_SECRET",
+      "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:btg/prod/gateway-client-secret"
     }
   ]
 }
 ```
+
+**Key Benefits:**
+- ✅ **No template files** - fetches live configuration from AWS
+- ✅ **Preserves all settings** - env vars, secrets, resources unchanged
+- ✅ **Supports manual updates** - if you change config in AWS Console, it persists
+- ✅ **Simple deployment** - only updates Docker image tag
 
 ---
 

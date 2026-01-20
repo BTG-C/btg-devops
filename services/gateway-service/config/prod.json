@@ -1,0 +1,15 @@
+{
+    "envVars":  {
+                    "AUTH_SERVER_URL":  "http://btg-prod-int-alb.us-east-1.elb.amazonaws.com/auth-server",
+                    "ENHANCER_SERVICE_URL":  "http://btg-prod-int-alb.us-east-1.elb.amazonaws.com/enhancer-service",
+                    "GATEWAY_URL":  "https://api.btgcric.com",
+                    "CORS_ALLOWED_ORIGINS":  "https://btgcric.com,https://www.btgcric.com",
+                    "UI_APP_BASE_URI":  "https://btgcric.com",
+                    "LOG_LEVEL":  "WARN",
+                    "SPRING_PROFILES_ACTIVE":  "prod"
+                },
+    "secrets":  {
+                    "MONGODB_URI":  "btg/prod/mongodb-uri",
+                    "GATEWAY_CLIENT_SECRET":  "btg/prod/gateway-client-secret"
+                }
+}

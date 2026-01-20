@@ -1,0 +1,10 @@
+{
+    "envVars":  {
+                    "LOG_LEVEL":  "WARN",
+                    "SPRING_PROFILES_ACTIVE":  "prod"
+                },
+    "secrets":  {
+                    "MONGODB_URI":  "btg/prod/mongodb-uri",
+                    "API_KEY":  "btg/prod/score-odd-api-key"
+                }
+}

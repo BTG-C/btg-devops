@@ -1,25 +1,3 @@
-# ==============================================================================
-# Score Odd Service Deployment Pipeline
-# ==============================================================================
-# Runs in: btg-devops repository
-# Purpose: Deploy Score Odd Service Docker image to AWS ECS
-#
-# ------------------------------------------------------------------------------
-# 🔐 CRITICAL SECRETS SETUP
-# ------------------------------------------------------------------------------
-# The following secrets must be added to THIS repository:
-#
-# 1. AWS Credentials:
-#    - AWS_ACCESS_KEY_ID
-#    - AWS_SECRET_ACCESS_KEY
-#    - AWS_REGION
-#    - AWS_ACCOUNT_ID
-#
-# 2. ECS Infrastructure:
-#    - SCORE_ODD_CLUSTER: .......... Name of ECS Cluster
-#    - SCORE_ODD_SERVICE: .......... Name of ECS Service
-# ==============================================================================
-
 name: Score Odd Service Deployment
 
 on:
@@ -35,48 +13,81 @@ on:
           - dev
           - staging
           - prod
+      image_tag:
+        description: 'Docker image tag'
+        required: true
+        type: string
 
-env:
-  SERVICE_NAME: score-odd-service
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REGISTRY: ghcr.io
-  IMAGE_NAME: btg-c/btg-score-odd-service
-  
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
-    name: Deploy to ECS
+    name: Deploy Score Odd Service
     runs-on: ubuntu-latest
     environment: ${{ github.event.client_payload.environment || inputs.environment }}
     
     steps:
-      - name: Checkout DevOps Repo (for scripts/config)
+      - name: Checkout DevOps repo
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Set variables
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "IMAGE_TAG=${{ github.event.client_payload.image_tag }}" >> $GITHUB_ENV
+            echo "ENV_NAME=${{ github.event.client_payload.environment }}" >> $GITHUB_ENV
+          else
+            echo "IMAGE_TAG=${{ inputs.image_tag }}" >> $GITHUB_ENV
+            echo "ENV_NAME=${{ inputs.environment }}" >> $GITHUB_ENV
+          fi
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Download Task Definition
+      
+      - name: Prepare task definition
         run: |
-          aws ecs describe-task-definition \
-            --task-definition ${{ secrets.SCORE_ODD_SERVICE }} \
-            --query taskDefinition > task-definition.json
-
-      - name: Fill in new image ID in the Amazon ECS task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: task-definition.json
-          container-name: ${{ env.SERVICE_NAME }}
-          image: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.client_payload.image_tag || 'latest' }}
-
-      - name: Deploy Amazon ECS task definition
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ secrets.SCORE_ODD_SERVICE }}
-          cluster: ${{ secrets.SCORE_ODD_CLUSTER }}
-          wait-for-service-stability: true
+          cp services/score-odd-service/ecs/task-definition-template.json task-def.json
+          
+          # Replace placeholders
+          sed -i "s/{{ENVIRONMENT}}/${{ env.ENV_NAME }}/g" task-def.json
+          sed -i "s|{{IMAGE_TAG}}|$IMAGE_TAG|g" task-def.json
+          sed -i "s/{{AWS_ACCOUNT_ID}}/${{ secrets.AWS_ACCOUNT_ID }}/g" task-def.json
+          sed -i "s/{{AWS_REGION}}/${{ secrets.AWS_REGION }}/g" task-def.json
+          
+          # Inject environment variables from config
+          CONFIG_FILE="services/score-odd-service/config/${{ env.ENV_NAME }}.json"
+          CONFIG_ENV=$(jq -r '.envVars | to_entries | map({name: .key, value: .value})' $CONFIG_FILE)
+          jq --argjson env "$CONFIG_ENV" '.containerDefinitions[0].environment = $env' task-def.json > task-def-updated.json
+          mv task-def-updated.json task-def.json
+      
+      - name: Deploy to ECS
+        run: |
+          echo "🚀 Deploying to ECS Cluster: btg-${{ env.ENV_NAME }}-cluster"
+          echo "Service: btg-${{ env.ENV_NAME }}-score-odd-service"
+          echo "Image: ghcr.io/btg-c/btg-score-odd-service:$IMAGE_TAG"
+          
+          # Register new task definition
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+            
+          echo "✅ Registered Task Definition: $NEW_TASK_DEF_ARN"
+          
+          # Update Service
+          aws ecs update-service \
+            --cluster btg-${{ env.ENV_NAME }}-cluster \
+            --service btg-${{ env.ENV_NAME }}-score-odd-service \
+            --task-definition $NEW_TASK_DEF_ARN \
+            --force-new-deployment
+            
+          echo "⏳ Waiting for deployment to stabilize..."
+          aws ecs wait services-stable \
+            --cluster btg-${{ env.ENV_NAME }}-cluster \
+            --services btg-${{ env.ENV_NAME }}-score-odd-service
+            
+          echo "✅ Deployment Complete!"

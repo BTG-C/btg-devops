@@ -161,6 +161,29 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      - name: Deploy runtime config (Shell MFE only)
+        if: steps.vars.outputs.app_name == 'shell'
+        env:
+          S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+          ENV_NAME: ${{ steps.vars.outputs.environment }}
+        run: |
+          echo "📝 Deploying runtime config.json for shell-mfe"
+          
+          # Copy config from services/shell-mfe/config/{env}.json to S3 config/ folder
+          CONFIG_FILE="services/shell-mfe/config/${ENV_NAME}.json"
+          
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "❌ Config file not found: $CONFIG_FILE"
+            exit 1
+          fi
+          
+          # Deploy to config/config.json path (matching public/config/config.json structure)
+          aws s3 cp "$CONFIG_FILE" "s3://${S3_BUCKET}/config/config.json" \
+            --cache-control "no-cache,no-store,must-revalidate" \
+            --content-type "application/json"
+          
+          echo "✅ Runtime config deployed to /config/config.json"
+      
       - name: Deploy to S3
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
@@ -226,6 +249,8 @@ jobs:
           fi
           
           # 4. Deploy config (No Cache)
+          # Note: Runtime config already deployed in previous step for shell-mfe
+          # This handles any config/ folder in the artifact itself
           if [ -d "deploy/config" ]; then
             aws s3 sync deploy/config/ s3://${S3_BUCKET}/config/ \
               --cache-control "no-cache,no-store,must-revalidate"
@@ -239,6 +264,7 @@ jobs:
           done
           
           echo "✅ Deployed to S3"
+          echo "📍 Runtime config available at: /config/config.json"
       
       - name: Invalidate CloudFront
         env:
@@ -248,7 +274,7 @@ jobs:
           
           INVALIDATION_ID=$(aws cloudfront create-invalidation \
             --distribution-id ${DISTRIBUTION_ID} \
-            --paths "/*" \
+            --paths "/*" "/config/config.json" \
             --query 'Invalidation.Id' \
             --output text)
           

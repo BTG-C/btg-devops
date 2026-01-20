@@ -43,3 +43,31 @@ variable "alert_email" {
   type        = string
   default     = "devops@btg-company.com"
 }
+
+# ==============================================================================
+# Service Container Images
+# ==============================================================================
+
+variable "gateway_service_image" {
+  description = "Gateway service Docker image (updated by CI/CD)"
+  type        = string
+  default     = "public.ecr.aws/docker/library/nginx:alpine"
+}
+
+variable "auth_service_image" {
+  description = "Auth server Docker image (updated by CI/CD)"
+  type        = string
+  default     = "public.ecr.aws/docker/library/nginx:alpine"
+}
+
+variable "score_odd_service_image" {
+  description = "Score-Odd service Docker image (updated by CI/CD)"
+  type        = string
+  default     = "public.ecr.aws/docker/library/nginx:alpine"
+}
+
+variable "enhancer_service_image" {
+  description = "Enhancer service Docker image (updated by CI/CD)"
+  type        = string
+  default     = "public.ecr.aws/docker/library/nginx:alpine"
+}

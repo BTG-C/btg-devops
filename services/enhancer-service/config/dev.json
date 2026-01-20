@@ -1,0 +1,11 @@
+{
+    "envVars":  {
+                    "SCORE_ODD_SERVICE_URL":  "http://btg-dev-int-alb.us-east-1.elb.amazonaws.com/score-odd-service",
+                    "LOG_LEVEL":  "DEBUG",
+                    "SPRING_PROFILES_ACTIVE":  "dev"
+                },
+    "secrets":  {
+                    "MONGODB_URI":  "btg/dev/mongodb-uri",
+                    "SCORE_ODD_API_KEY":  "btg/dev/score-odd-api-key"
+                }
+}

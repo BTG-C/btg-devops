@@ -1,0 +1,11 @@
+{
+    "envVars":  {
+                    "SCORE_ODD_SERVICE_URL":  "http://btg-staging-int-alb.us-east-1.elb.amazonaws.com/score-odd-service",
+                    "LOG_LEVEL":  "INFO",
+                    "SPRING_PROFILES_ACTIVE":  "staging"
+                },
+    "secrets":  {
+                    "MONGODB_URI":  "btg/staging/mongodb-uri",
+                    "SCORE_ODD_API_KEY":  "btg/staging/score-odd-api-key"
+                }
+}

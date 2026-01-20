@@ -1,0 +1,15 @@
+{
+    "envVars":  {
+                    "AUTH_SERVER_URL":  "http://btg-staging-int-alb.us-east-1.elb.amazonaws.com/auth-server",
+                    "ENHANCER_SERVICE_URL":  "http://btg-staging-int-alb.us-east-1.elb.amazonaws.com/enhancer-service",
+                    "GATEWAY_URL":  "https://api-staging.btgcric.com",
+                    "CORS_ALLOWED_ORIGINS":  "https://staging.btgcric.com",
+                    "UI_APP_BASE_URI":  "https://staging.btgcric.com",
+                    "LOG_LEVEL":  "INFO",
+                    "SPRING_PROFILES_ACTIVE":  "staging"
+                },
+    "secrets":  {
+                    "MONGODB_URI":  "btg/staging/mongodb-uri",
+                    "GATEWAY_CLIENT_SECRET":  "btg/staging/gateway-client-secret"
+                }
+}

@@ -1,0 +1,7 @@
+{
+  "backendBaseUrl": "https://api-staging.btgcric.com",
+  "environment": "staging",
+  "mfes": {
+    "enhancer": "https://staging.btgcric.com/mfe-bundles/enhancer/remoteEntry.json"
+  }
+}

@@ -23,10 +23,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.0"
-    }
   }
 }
 
@@ -121,7 +117,7 @@ module "gateway_service" {
   aws_region       = var.aws_region
   vpc_id           = module.networking.vpc_id
   cluster_id       = module.ecs_platform.cluster_id
-  service_name     = "gateway"
+  service_name     = "gateway-service"
   container_image  = var.gateway_service_image
   container_port   = 8080
   desired_count    = 1
@@ -129,7 +125,7 @@ module "gateway_service" {
   memory           = 1024
   
   listener_arn      = var.certificate_arn != "" ? module.ecs_platform.public_https_listener_arn : module.ecs_platform.public_listener_arn
-  path_pattern      = "/*"
+  path_pattern      = "/gateway-service/*"
   listener_priority = 100
   health_check_path = "/actuator/health"
   
@@ -166,7 +162,7 @@ module "auth_service" {
   aws_region       = var.aws_region
   vpc_id           = module.networking.vpc_id
   cluster_id       = module.ecs_platform.cluster_id
-  service_name     = "auth"
+  service_name     = "auth-server"
   container_image  = var.auth_service_image
   container_port   = 8080
   desired_count    = 1
@@ -174,7 +170,7 @@ module "auth_service" {
   memory           = 512
   
   listener_arn      = module.ecs_platform.internal_listener_arn
-  path_pattern      = "/auth/*"
+  path_pattern      = "/auth-server/*"
   listener_priority = 10
   health_check_path = "/actuator/health"
   
@@ -211,7 +207,7 @@ module "score_odd_service" {
   aws_region       = var.aws_region
   vpc_id           = module.networking.vpc_id
   cluster_id       = module.ecs_platform.cluster_id
-  service_name     = "score-odd"
+  service_name     = "score-odd-service"
   container_image  = var.score_odd_service_image
   container_port   = 8080
   desired_count    = 1
@@ -219,7 +215,7 @@ module "score_odd_service" {
   memory           = 1024
   
   listener_arn      = module.ecs_platform.internal_listener_arn
-  path_pattern      = "/score-odd/*"
+  path_pattern      = "/score-odd-service/*"
   listener_priority = 20
   health_check_path = "/actuator/health"
   
@@ -256,7 +252,7 @@ module "enhancer_service" {
   aws_region       = var.aws_region
   vpc_id           = module.networking.vpc_id
   cluster_id       = module.ecs_platform.cluster_id
-  service_name     = "enhancer"
+  service_name     = "enhancer-service"
   container_image  = var.enhancer_service_image
   container_port   = 8080
   desired_count    = 1
@@ -264,7 +260,7 @@ module "enhancer_service" {
   memory           = 512
   
   listener_arn      = module.ecs_platform.internal_listener_arn
-  path_pattern      = "/enhancer/*"
+  path_pattern      = "/enhancer-service/*"
   listener_priority = 30
   health_check_path = "/actuator/health"
   
@@ -288,6 +284,38 @@ module "enhancer_service" {
       valueFrom = module.documentdb.master_password_secret_arn
     }
   ]
+}
+
+# ------------------------------------------------------------------------------
+# 9. Cost Monitoring (AWS Budget)
+# ------------------------------------------------------------------------------
+resource "aws_budgets_budget" "monthly" {
+  name              = "btg-dev-monthly-budget"
+  budget_type       = "COST"
+  limit_amount      = "500"  # $500/month threshold for dev
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  time_period_start = "2026-01-01_00:00"
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80  # Alert at 80% ($400)
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100  # Alert at 100% ($500)
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.alert_email]
+  }
+
+  tags = {
+    Name = "btg-dev-monthly-budget"
+  }
 }
 
 # ------------------------------------------------------------------------------

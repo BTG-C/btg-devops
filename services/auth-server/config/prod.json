@@ -1,0 +1,14 @@
+{
+    "envVars":  {
+                    "AUTH_SERVER_BASE_URL":  "https://api.btgcric.com",
+                    "CORS_ALLOWED_ORIGINS":  "https://btgcric.com,https://www.btgcric.com",
+                    "SESSION_COOKIE_DOMAIN":  ".btgcric.com",
+                    "SESSION_COOKIE_SECURE":  "true",
+                    "COOKIE_SECURE":  "true",
+                    "LOG_LEVEL":  "WARN",
+                    "SPRING_PROFILES_ACTIVE":  "prod"
+                },
+    "secrets":  {
+                    "MONGODB_AUTH_URI":  "btg/prod/mongodb-auth-uri"
+                }
+}
