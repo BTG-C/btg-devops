@@ -14,11 +14,11 @@
 #    - prod
 #
 # 2. Add Secrets to EACH Environment:
-#    - AWS_ROLE_ARN: .............. IAM Role ARN for OIDC Trust
+#    - AWS_ROLE_ARN: .............. IAM Role ARN for GitHub Actions OIDC (from terraform output)
 #    - AWS_REGION: ................ Target AWS Region (e.g., us-east-1)
-#    - S3_BUCKET_NAME: ............ Target Shared Bucket (e.g., btg-dev-blue)
-#    - CLOUDFRONT_DISTRIBUTION_ID:  ID for cache invalidation
-#    - CLOUDFRONT_URL: ............ URL for smoke testing (e.g., https://d123.cloudfront.net)
+#    - S3_BUCKET_NAME: ............ S3 bucket name (e.g., btg-dev-mfe-assets) (from terraform output)
+#    - CLOUDFRONT_DISTRIBUTION_ID:  CloudFront distribution ID (from terraform output)
+#    - CLOUDFRONT_URL: ............ CloudFront URL (from terraform output, e.g., https://d123.cloudfront.net)
 # ==============================================================================
 
 name: MFE Promotion Pipeline
