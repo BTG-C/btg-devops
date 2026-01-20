@@ -70,7 +70,7 @@ module "documentdb" {
   allowed_security_groups = [module.ecs_platform.ecs_tasks_sg_id]
   
   instance_class          = "db.t3.medium" # Keep cost low for staging
-  instance_count          = 1              # Single instance for staging
+  instance_count          = 2              # Replica set for HA
 }
 
 # ------------------------------------------------------------------------------

@@ -47,3 +47,21 @@ variable "skip_final_snapshot" {
   type        = bool
   default     = false
 }
+
+variable "databases" {
+  description = "Map of databases to create with their own credentials"
+  type = map(object({
+    username    = string
+    description = string
+  }))
+  default = {
+    btg_auth = {
+      username    = "btgauth"
+      description = "Authentication and user management database"
+    }
+    btg = {
+      username    = "btgapp"
+      description = "Main business logic database"
+    }
+  }
+}

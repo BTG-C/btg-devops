@@ -103,3 +103,52 @@ resource "aws_secretsmanager_secret_version" "docdb_credentials" {
     dbname   = "admin"
   })
 }
+
+# ==============================================================================
+# Multi-Database Setup with Separate Credentials
+# ==============================================================================
+
+# Reference manually created database-specific secrets
+# Admin must create these secrets in AWS Secrets Manager:
+#   - docdb/${var.project_name}-${var.environment}/btg_auth/password
+#   - docdb/${var.project_name}-${var.environment}/btg/password
+data "aws_secretsmanager_secret" "db_passwords" {
+  for_each = var.databases
+  name     = "docdb/${var.project_name}-${var.environment}/${each.key}/password"
+}
+
+data "aws_secretsmanager_secret_version" "db_passwords" {
+  for_each  = var.databases
+  secret_id = data.aws_secretsmanager_secret.db_passwords[each.key].id
+}
+
+locals {
+  db_passwords = {
+    for db_key, db_config in var.databases :
+    db_key => jsondecode(data.aws_secretsmanager_secret_version.db_passwords[db_key].secret_string)["password"]
+  }
+}
+
+# Store full connection details for each database
+resource "aws_secretsmanager_secret" "db_credentials" {
+  for_each = var.databases
+  
+  name                    = "docdb/${var.project_name}-${var.environment}/${each.key}/credentials"
+  description             = "${each.value.description} - Full connection details"
+  recovery_window_in_days = var.environment == "prod" ? 30 : 0
+}
+
+resource "aws_secretsmanager_secret_version" "db_credentials" {
+  for_each  = var.databases
+  secret_id = aws_secretsmanager_secret.db_credentials[each.key].id
+  
+  secret_string = jsonencode({
+    username = each.value.username
+    password = local.db_passwords[each.key]
+    engine   = "mongo"
+    host     = aws_docdb_cluster.main.endpoint
+    port     = 27017
+    dbname   = each.key
+    uri      = "mongodb://${each.value.username}:${local.db_passwords[each.key]}@${aws_docdb_cluster.main.endpoint}:27017/${each.key}?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
+  })
+}

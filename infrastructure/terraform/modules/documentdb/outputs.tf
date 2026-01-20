@@ -32,3 +32,24 @@ output "secret_arn" {
   description = "ARN of the Secrets Manager secret containing credentials (alias)"
   value       = aws_secretsmanager_secret.docdb_credentials.arn
 }
+
+output "db_credentials_arns" {
+  description = "Map of database-specific credential secret ARNs"
+  value = {
+    for db_key, secret in aws_secretsmanager_secret.db_credentials :
+    db_key => secret.arn
+  }
+}
+
+output "database_names" {
+  description = "List of database names configured"
+  value       = keys(var.databases)
+}
+
+output "database_users" {
+  description = "Map of database names to usernames"
+  value = {
+    for db_key, db_config in var.databases :
+    db_key => db_config.username
+  }
+}

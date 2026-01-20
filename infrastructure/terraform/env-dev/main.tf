@@ -71,7 +71,7 @@ module "documentdb" {
   
   master_username         = "btgadmin"
   instance_class          = "db.t3.medium"
-  instance_count          = 1
+  instance_count          = 2 # Replica set for HA
   skip_final_snapshot     = true # Dev only - prod should be false
 }
 
