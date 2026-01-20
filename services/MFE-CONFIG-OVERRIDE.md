@@ -148,7 +148,8 @@ jobs:
 ### **S3 Bucket for MFE Assets**
 
 ```hcl
-# infrastructure/terraform/modules/shared-mfe/main.tf
+# infrastructure/terraform/modules/mfe-cloudfront/main.tf
+# CloudFront serves config files with no caching
 
 resource "aws_s3_bucket" "mfe_assets" {
   bucket = "btg-${var.environment}-mfe-assets"

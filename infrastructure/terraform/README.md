@@ -26,19 +26,25 @@ infrastructure/terraform/
 │   └── prod/               # Creates S3+DynamoDB in prod account
 │
 ├── modules/
-│   └── shared-mfe/         # Reusable infrastructure module
+│   ├── documentdb/          # DocumentDB cluster module
+│   ├── ecs-platform/        # ECS cluster + ALB module
+│   ├── ecs-service/         # ECS service module (reusable)
+│   ├── networking/          # VPC + subnets module
+│   ├── mfe-s3/              # S3 bucket for MFE hosting
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── mfe-cloudfront/      # CloudFront CDN distribution
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   └── mfe-iam/             # GitHub Actions IAM roles
 │       ├── main.tf
 │       ├── variables.tf
-│       ├── s3.tf           # S3 bucket resources
-│       ├── cloudfront.tf   # CloudFront distributions
-│       ├── iam.tf          # IAM roles for GitHub Actions
-│       ├── ssm.tf          # SSM parameters for blue-green
-│       ├── locals.tf       # Data sources
-│       ├── outputs.tf      # Output values
-│       └── versions.tf     # Provider versions
+│       └── outputs.tf
 │
 ├── env-dev/                # Development environment
-│   ├── main.tf            # Calls shared-mfe module
+│   ├── main.tf            # Calls mfe-s3, mfe-cloudfront, mfe-iam modules
 │   ├── variables.tf       # Input variables
 │   └── terraform.tfvars   # Dev-specific values
 │
@@ -110,10 +116,10 @@ terraform apply
 
 **Output:**
 ```
-s3_bucket_name              = "btg-dev-blue"
+s3_bucket_name              = "btg-dev-mfe-assets"
 cloudfront_distribution_id  = "E1ABC2DEF3GHI"
 cloudfront_url             = "https://d1abc2def3ghi.cloudfront.net"
-github_actions_role_arn    = "arn:aws:iam::123456789012:role/btg-dev-github-actions-role"
+github_actions_role_arn    = "arn:aws:iam::123456789012:role/btg-dev-github-actions-mfe"
 ```
 
 ---
@@ -155,8 +161,8 @@ terraform apply
 | Environment | AWS Account | State Bucket | Resources Created |
 |-------------|-------------|--------------|-------------------|
 | **dev** | Dev Account (111111111111) | `btg-terraform-state-dev` | S3, CloudFront, IAM |
-| **staging** | Prod Account (222222222222) | `btg-terraform-state-prod` | S3 (blue+green), CloudFront (blue+green), IAM, SSM |
-| **prod** | Prod Account (222222222222) | `btg-terraform-state-prod` | S3 (blue+green), CloudFront (blue+green), IAM, SSM |
+| **staging** | Prod Account (222222222222) | `btg-terraform-state-prod` | S3, CloudFront, IAM |
+| **prod** | Prod Account (222222222222) | `btg-terraform-state-prod` | S3, CloudFront, IAM |
 
 **Note**: Staging and prod share the same AWS account but have:
 - Separate state files in S3 (`staging/terraform.tfstate` vs `prod/terraform.tfstate`)
@@ -274,7 +280,7 @@ This structure follows **2026 infrastructure best practices**:
 | View current state | `terraform show` |
 | List resources | `terraform state list` |
 | Destroy environment | `terraform destroy` |
-| Update module | Edit `modules/shared-mfe/`, then `terraform apply` in env folders |
+| Update module | Edit `modules/mfe-s3/`, `modules/mfe-cloudfront/`, or `modules/mfe-iam/`, then `terraform apply` in env folders |
 
 ---
 

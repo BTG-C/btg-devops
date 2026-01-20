@@ -119,10 +119,9 @@ terraform apply -var-file="environments/dev.tfvars"
 **Review the plan carefully**, then type `yes` to confirm.
 
 **Resources created**:
-- S3 bucket: `btg-dev-blue`
+- S3 bucket: `btg-dev-mfe-assets`
 - CloudFront distribution
-- IAM role: `btg-dev-github-actions-role`
-- SSM parameters (if blue-green enabled)
+- IAM role: `btg-dev-github-actions-mfe`
 
 **Time**: ~5-10 minutes
 
@@ -134,10 +133,9 @@ terraform apply -var-file="environments/staging.tfvars"
 ```
 
 **Resources created**:
-- S3 buckets: `btg-staging-blue` + `btg-staging-green`
-- CloudFront distributions (blue + green)
-- IAM role: `btg-staging-github-actions-role`
-- SSM parameter: `/btg/staging/active-env`
+- S3 bucket: `btg-staging-mfe-assets`
+- CloudFront distribution
+- IAM role: `btg-staging-github-actions-mfe`
 
 ### Production Environment
 
@@ -147,10 +145,9 @@ terraform apply -var-file="environments/prod.tfvars"
 ```
 
 **Resources created**:
-- S3 buckets: `btg-prod-blue` + `btg-prod-green`
-- CloudFront distributions (blue + green)
-- IAM role: `btg-prod-github-actions-role`
-- SSM parameter: `/btg/prod/active-env`
+- S3 bucket: `btg-prod-mfe-assets`
+- CloudFront distribution
+- IAM role: `btg-prod-github-actions-mfe`
 
 ---
 
@@ -171,8 +168,8 @@ terraform output -raw cloudfront_url
 
 **Example output**:
 ```
-github_actions_role_arn = "arn:aws:iam::123456789012:role/btg-dev-github-actions-role"
-s3_bucket_name = "btg-dev-blue"
+github_actions_role_arn = "arn:aws:iam::123456789012:role/btg-dev-github-actions-mfe"
+s3_bucket_name = "btg-dev-mfe-assets"
 cloudfront_distribution_id = "E1234567890ABC"
 cloudfront_url = "https://d1a2b3c4d5e6f7.cloudfront.net"
 ```
@@ -296,10 +293,9 @@ aws s3 rm s3://btg-dev-blue/test.html
 
 | Setting | Dev | Staging | Prod |
 |---------|-----|---------|------|
-| **S3 Buckets** | 1 (blue) | 2 (blue + green) | 2 (blue + green) |
-| **CloudFront Price Class** | PriceClass_100 | PriceClass_100 | PriceClass_All |
-| **Version Retention** | 7 days | 7 days | 30 days |
-| **Blue-Green** | ❌ Disabled | ✅ Enabled | ✅ Enabled |
+| **S3 Buckets** | 1 | 1 | 1 |
+| **CloudFront Price Class** | PriceClass_100 | PriceClass_200 | PriceClass_All |
+| **Version Retention** | 7 days | 14 days | 30 days |
 
 ### CloudFront Cache Policies
 
@@ -356,34 +352,6 @@ terraform destroy -var-file="environments/dev.tfvars"
 
 ---
 
-## Blue-Green Deployment
-
-### Check Active Environment
-
-```powershell
-# Get active environment (staging/prod only)
-aws ssm get-parameter --name "/btg/prod/active-env" --query 'Parameter.Value' --output text
-```
-
-**Output**: `blue` or `green`
-
-### Switch Environments
-
-```powershell
-# Switch to green
-aws ssm put-parameter `
-  --name "/btg/prod/active-env" `
-  --value "green" `
-  --overwrite
-
-# Verify switch
-aws ssm get-parameter --name "/btg/prod/active-env" --query 'Parameter.Value' --output text
-```
-
-**Note**: This updates SSM parameter only. CloudFront distribution switching requires additional automation or manual update.
-
----
-
 ## Troubleshooting
 
 ### Terraform Errors
@@ -392,7 +360,7 @@ aws ssm get-parameter --name "/btg/prod/active-env" --query 'Parameter.Value' --
 
 ```powershell
 # Import existing resource
-terraform import aws_s3_bucket.mfe_bucket btg-dev-blue
+terraform import aws_s3_bucket.mfe_bucket btg-dev-mfe-assets
 ```
 
 #### Error: "GitHub OIDC provider not found"
@@ -597,7 +565,7 @@ aws s3 ls s3://btg-terraform-state/btg-mfe/ --recursive
 ✅ **Infrastructure as Code**: Terraform manages all AWS resources  
 ✅ **Scalable**: Supports 30+ MFEs with no config changes  
 ✅ **Secure**: OIDC, encryption, private buckets, OAC  
-✅ **Cost-Optimized**: Single bucket, regional price classes for dev/staging  
-✅ **Production-Ready**: Blue-green deployment, versioning, monitoring  
+✅ **Cost-Optimized**: Single bucket per environment, optimized price classes  
+✅ **Production-Ready**: CloudFront versioning, S3 lifecycle policies, monitoring  
 
 **Your BTG MFE infrastructure is now deployed and ready for CI/CD!** 🚀

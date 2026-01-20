@@ -40,7 +40,6 @@ This directory contains **TEMPLATES** for GitHub Actions workflows that should b
 │   - Pull artifact from GHCR                                │
 │   - Deploy to S3 (dev/staging/prod)                        │
 │   - Invalidate CloudFront cache                            │
-│   - Update SSM parameters (blue-green switch)              │
 │   - Run smoke tests                                         │
 └─────────────────────────────────────────────────────────────┘
 ```

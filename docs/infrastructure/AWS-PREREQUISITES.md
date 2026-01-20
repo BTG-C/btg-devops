@@ -774,9 +774,9 @@ terraform apply -var-file="environments/dev.tfvars"
 - **Total: ~$7/month**
 
 **Production Environment**:
-- S3: ~$5/month (20 GB storage, blue + green)
+- S3: ~$3/month (15 GB storage with lifecycle policies)
 - CloudFront: ~$20/month (500 GB transfer, 5M requests)
-- **Total: ~$25/month**
+- **Total: ~$23/month**
 
 ---
 

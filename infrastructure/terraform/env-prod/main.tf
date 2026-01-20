@@ -91,18 +91,43 @@ module "ecs_platform" {
 }
 
 # ------------------------------------------------------------------------------
-# 4. MFE Infrastructure Module (S3, CloudFront)
+# 4. MFE S3 Bucket
 # ------------------------------------------------------------------------------
-module "mfe_infrastructure" {
-  source = "../modules/shared-mfe"
+module "mfe_s3" {
+  source = "../modules/mfe-s3"
   
-  aws_region   = var.aws_region
-  project_name = var.project_name
-  environment  = var.environment
-  github_repo  = var.github_repo
+  project_name   = var.project_name
+  environment    = var.environment
+  retention_days = 30  # Production: longer retention
+}
+
+# ------------------------------------------------------------------------------
+# 5. MFE CloudFront Distribution
+# ------------------------------------------------------------------------------
+module "mfe_cloudfront" {
+  source = "../modules/mfe-cloudfront"
   
-  domain_name     = var.domain_name
-  certificate_arn = var.certificate_arn
+  project_name                   = var.project_name
+  environment                    = var.environment
+  s3_bucket_id                   = module.mfe_s3.bucket_id
+  s3_bucket_arn                  = module.mfe_s3.bucket_arn
+  s3_bucket_regional_domain_name = module.mfe_s3.bucket_regional_domain_name
+  domain_name                    = var.domain_name
+  certificate_arn                = var.certificate_arn
+  price_class                    = "PriceClass_All"  # Production: Global
+}
+
+# ------------------------------------------------------------------------------
+# 6. MFE IAM (GitHub Actions)
+# ------------------------------------------------------------------------------
+module "mfe_iam" {
+  source = "../modules/mfe-iam"
+  
+  project_name                = var.project_name
+  environment                 = var.environment
+  github_repo                 = var.github_repo
+  s3_bucket_arn               = module.mfe_s3.bucket_arn
+  cloudfront_distribution_arn = module.mfe_cloudfront.distribution_arn
 }
 
 # ==============================================================================
@@ -353,17 +378,17 @@ output "docdb_endpoint" {
 }
 
 output "s3_bucket_name" {
-  value = module.mfe_infrastructure.s3_bucket_name
+  value = module.mfe_s3.bucket_id
 }
 
 output "cloudfront_distribution_id" {
-  value = module.mfe_infrastructure.cloudfront_distribution_id
+  value = module.mfe_cloudfront.distribution_id
 }
 
 output "cloudfront_url" {
-  value = module.mfe_infrastructure.cloudfront_url
+  value = module.mfe_cloudfront.distribution_url
 }
 
 output "github_actions_role_arn" {
-  value = module.mfe_infrastructure.github_actions_role_arn
+  value = module.mfe_iam.github_actions_role_arn
 }

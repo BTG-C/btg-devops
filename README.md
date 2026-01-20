@@ -41,7 +41,9 @@ btg-devops/
 │   └── terraform/
 │       ├── README.md                 # Multi-account structure docs
 │       ├── modules/
-│       │   └── shared-mfe/          # Reusable S3+CloudFront module
+│       │   ├── mfe-s3/              # S3 bucket for MFE hosting
+│       │   ├── mfe-cloudfront/     # CloudFront CDN distribution
+│       │   └── mfe-iam/            # GitHub Actions IAM roles
 │       ├── env-dev/                 # Dev environment (separate AWS account)
 │       ├── env-staging/             # Staging (prod AWS account)
 │       ├── env-prod/                # Production (prod AWS account)
