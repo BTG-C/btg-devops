@@ -303,7 +303,7 @@ sequenceDiagram
 - Slightly slower ECS pulls (cross-internet vs VPC endpoint)
 - Requires GHCR PAT in Secrets Manager
 
-**See:** [Why GHCR over ECR](../architecture/GHCR-VS-ECR.md)
+**See:** Configuration Flow document for artifact management details
 
 #### 2. Centralized DevOps Repo
 **Decision:** Single `btg-devops` repo for all services
@@ -318,7 +318,7 @@ sequenceDiagram
 - Potential merge conflicts (mitigated with CODEOWNERS)
 - Larger repo size (acceptable at current scale)
 
-**See:** [Repository Strategy](REPOSITORY-STRATEGY.md)
+**See:** Architecture Overview section above for repository organization
 
 #### 3. Runtime Config Hydration
 **Decision:** Use `envsubst` for config templating at container startup
@@ -332,7 +332,7 @@ sequenceDiagram
 - Slight startup delay (~500ms)
 - Requires shell in container (Alpine has it)
 
-**See:** [Configuration Management](../operations/CONFIGURATION-MANAGEMENT.md)
+**See:** [Configuration Flow](../development/CONFIGURATION-FLOW.md)
 
 #### 4. GitHub Environments over HashiCorp Vault
 **Decision:** Use GitHub Environments for config storage
@@ -405,10 +405,11 @@ Layer 5: Network Security
 
 ## References
 
-- [System Architecture Diagram](SYSTEM-ARCHITECTURE.md)
-- [CI/CD Pipeline Details](CICD-PIPELINE.md)
-- [Technology Decisions](TECHNOLOGY-DECISIONS.md)
-- [Security Architecture](../security/SECURITY-ARCHITECTURE.md)
+- [Configuration Flow](../development/CONFIGURATION-FLOW.md)
+- [GitHub Environments Setup](../development/GITHUB-ENVIRONMENTS-SETUP.md)
+- [AWS Organization Setup](../infrastructure/AWS-ORGANIZATION-SETUP.md)
+- [BTG AWS Deployment](../infrastructure/BTG-AWS-DEPLOYMENT.md)
+- [Deployment Runbook](../operations/DEPLOYMENT-RUNBOOK.md)
 
 ---
 

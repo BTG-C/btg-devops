@@ -461,7 +461,7 @@ kubectl run debug --rm -it --image=curlimages/curl -- \
 1. **Page** on-call engineer immediately
 2. **Assess** impact (% of users affected)
 3. **Decide:** Rollback vs forward-fix vs hotfix
-4. **Execute:** Follow [Incident Response Playbook](../troubleshooting/INCIDENT-RESPONSE.md)
+4. **Execute:** Follow rollback procedures and check CloudWatch logs
 5. **Communicate:** Post updates every 15 minutes in #incidents
 
 ---
@@ -488,9 +488,8 @@ kubectl run debug --rm -it --image=curlimages/curl -- \
 ## References
 
 - [Rollback Procedures](ROLLBACK-PROCEDURES.md)
-- [Monitoring & Alerting](MONITORING.md)
-- [Disaster Recovery](DISASTER-RECOVERY.md)
-- [Incident Response](../troubleshooting/INCIDENT-RESPONSE.md)
+- [GitHub Environments Setup](../development/GITHUB-ENVIRONMENTS-SETUP.md)
+- [Configuration Flow](../development/CONFIGURATION-FLOW.md)
 
 ---
 

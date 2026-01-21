@@ -2,16 +2,17 @@
 
 ## Overview
 
-BTG uses **separate AWS accounts** for each environment to ensure maximum isolation:
-- **Dev Account**: Development and testing
-- **Staging Account**: Pre-production and staging environments
-- **Prod Account**: Production environments
+PuntEdge BTG uses **separate AWS accounts** for each environment to ensure maximum isolation:
+- **Dev Account**: Development and testing (punt-btg-dev)
+- **Staging Account**: Pre-production and staging environments (punt-btg-staging)
+- **Prod Account**: Production environments (punt-btg-prod)
 
 This structure provides:
 - ✅ **Blast radius isolation**: Issues in one env can't affect others
 - ✅ **Cost tracking**: Separate billing per account/environment
 - ✅ **Security compliance**: Strict data and access isolation
 - ✅ **State isolation**: Terraform state stored per account
+- ✅ **Organization prefix**: All resources prefixed with 'punt' for PuntEdge
 
 ---
 
@@ -69,19 +70,19 @@ infrastructure/terraform/
 
 ```powershell
 # Setup dev account backend
-aws configure --profile btg-dev
+aws configure --profile punt-btg-dev
 cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\dev
 terraform init
 terraform apply
 
 # Setup staging account backend
-aws configure --profile btg-staging
+aws configure --profile punt-btg-staging
 cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\staging
 terraform init
 terraform apply
 
 # Setup prod account backend
-aws configure --profile btg-prod
+aws configure --profile punt-btg-prod
 cd c:\Git\btg-devops\infrastructure\terraform\backend-setup\prod
 terraform init
 terraform apply
@@ -99,7 +100,7 @@ This creates:
 
 ```powershell
 # Authenticate to dev AWS account
-aws configure --profile btg-dev
+aws configure --profile punt-btg-dev
 
 # Navigate to dev environment
 cd c:\Git\btg-devops\infrastructure\terraform\env-dev
@@ -116,10 +117,10 @@ terraform apply
 
 **Output:**
 ```
-s3_bucket_name              = "btg-dev-mfe-assets"
+s3_bucket_name              = "punt-btg-dev-mfe-assets"
 cloudfront_distribution_id  = "E1ABC2DEF3GHI"
 cloudfront_url             = "https://d1abc2def3ghi.cloudfront.net"
-github_actions_role_arn    = "arn:aws:iam::123456789012:role/btg-dev-github-actions-mfe"
+github_actions_role_arn    = "arn:aws:iam::123456789012:role/punt-btg-dev-github-actions-mfe"
 ```
 
 ---
@@ -128,7 +129,7 @@ github_actions_role_arn    = "arn:aws:iam::123456789012:role/btg-dev-github-acti
 
 ```powershell
 # Authenticate to prod AWS account
-aws configure --profile btg-prod
+aws configure --profile punt-btg-prod
 
 # Navigate to staging environment
 cd c:\Git\btg-devops\infrastructure\terraform\env-staging
@@ -144,7 +145,7 @@ terraform apply
 
 ```powershell
 # Same prod AWS account as staging
-aws configure --profile btg-prod
+aws configure --profile punt-btg-prod
 
 # Navigate to production environment
 cd c:\Git\btg-devops\infrastructure\terraform\env-prod
@@ -160,9 +161,9 @@ terraform apply
 
 | Environment | AWS Account | State Bucket | Resources Created |
 |-------------|-------------|--------------|-------------------|
-| **dev** | Dev Account (111111111111) | `btg-terraform-state-dev` | S3, CloudFront, IAM |
-| **staging** | Prod Account (222222222222) | `btg-terraform-state-prod` | S3, CloudFront, IAM |
-| **prod** | Prod Account (222222222222) | `btg-terraform-state-prod` | S3, CloudFront, IAM |
+| **dev** | Dev Account (111111111111) | `punt-terraform-state-dev` | S3, CloudFront, IAM |
+| **staging** | Prod Account (222222222222) | `punt-terraform-state-staging` | S3, CloudFront, IAM |
+| **prod** | Prod Account (222222222222) | `punt-terraform-state-prod` | S3, CloudFront, IAM |
 
 **Note**: Staging and prod share the same AWS account but have:
 - Separate state files in S3 (`staging/terraform.tfstate` vs `prod/terraform.tfstate`)
@@ -292,4 +293,4 @@ This structure follows **2026 infrastructure best practices**:
 4. ✅ Deploy to staging
 5. ✅ Deploy to production with approvals
 
-See [AWS-SETUP.md](./AWS-SETUP.md) for detailed deployment instructions.
+See [BTG-AWS-DEPLOYMENT.md](../../docs/infrastructure/BTG-AWS-DEPLOYMENT.md) for detailed deployment instructions.

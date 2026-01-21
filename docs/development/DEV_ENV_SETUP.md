@@ -804,7 +804,7 @@ For issues or questions:
 4. Review Terraform state: `terraform show`
 
 **Documentation References:**
-- AWS Prerequisites: `docs/infrastructure/AWS-PREREQUISITES.md`
-- AWS Setup: `docs/infrastructure/AWS-SETUP.md`
+- AWS Organization: `docs/infrastructure/AWS-ORGANIZATION-SETUP.md`
+- BTG Deployment: `docs/infrastructure/BTG-AWS-DEPLOYMENT.md`
 - MFE Configuration: `services/MFE-CONFIG-OVERRIDE.md`
 - Configuration Flow: `docs/development/CONFIGURATION-FLOW.md`

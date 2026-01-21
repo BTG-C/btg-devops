@@ -60,8 +60,9 @@ btg-devops/
 │   │   ├── GITHUB-ENVIRONMENTS-GATEWAY.md
 │   │   └── CONFIGURATION-FLOW.md
 │   ├── infrastructure/
-│   │   ├── AWS-SETUP.md
-│   │   └── AWS-PREREQUISITES.md
+│   │   ├── AWS-ORGANIZATION-SETUP.md
+│   │   ├── BTG-AWS-DEPLOYMENT.md
+│   │   └── DOCUMENTDB_SETUP.md
 │   ├── operations/
 │   │   ├── DEPLOYMENT-RUNBOOK.md
 │   │   └── ROLLBACK-PROCEDURES.md
@@ -145,8 +146,8 @@ terraform init && terraform plan && terraform apply
 - [Rollback Procedures](docs/operations/ROLLBACK-PROCEDURES.md) - Emergency response
 
 ### Infrastructure
-- [AWS Setup Guide](docs/infrastructure/AWS-SETUP.md) - Multi-account Terraform deployment
-- [AWS Prerequisites](docs/infrastructure/AWS-PREREQUISITES.md) - Account setup
+- [AWS Organization Setup](docs/infrastructure/AWS-ORGANIZATION-SETUP.md) - Generic multi-account setup
+- [BTG AWS Deployment](docs/infrastructure/BTG-AWS-DEPLOYMENT.md) - BTG-specific infrastructure
 - [Terraform Structure](infrastructure/terraform/README.md) - Multi-account organization
 
 ### Security

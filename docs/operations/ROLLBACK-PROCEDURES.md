@@ -455,9 +455,8 @@ gh workflow run gateway-service-deployment.yml \
 ## References
 
 - [Deployment Runbook](DEPLOYMENT-RUNBOOK.md)
-- [Disaster Recovery](DISASTER-RECOVERY.md)
-- [Incident Response](../troubleshooting/INCIDENT-RESPONSE.md)
-- [Monitoring & Alerting](MONITORING.md)
+- [GitHub Environments Setup](../development/GITHUB-ENVIRONMENTS-SETUP.md)
+- [Configuration Flow](../development/CONFIGURATION-FLOW.md)
 
 ---
 

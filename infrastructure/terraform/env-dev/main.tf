@@ -11,11 +11,11 @@ terraform {
   
   # Remote state backend - prevents state conflicts
   backend "s3" {
-    bucket         = "btg-terraform-state-dev"
-    key            = "mfe-infrastructure/dev/terraform.tfstate"
+    bucket         = "punt-terraform-state-dev"
+    key            = "btg/dev/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "btg-terraform-locks-dev"
+    dynamodb_table = "punt-terraform-locks-dev"
   }
   
   required_providers {
@@ -37,11 +37,13 @@ provider "aws" {
   
   default_tags {
     tags = {
-      Project     = "BTG-MFE"
-      Environment = "dev"
-      ManagedBy   = "Terraform"
-      CostCenter  = "Engineering"
-      Owner       = "DevOps"
+      Organization = "PuntEdge"
+      Product      = "BTG"
+      Environment  = "dev"
+      ManagedBy    = "Terraform"
+      CostCenter   = "btg-engineering"
+      Owner        = "DevOps"
+      Repository   = "btg-devops"
     }
   }
 }
@@ -314,7 +316,7 @@ module "enhancer_service" {
 # 11. Cost Monitoring (AWS Budget)
 # ------------------------------------------------------------------------------
 resource "aws_budgets_budget" "monthly" {
-  name              = "btg-dev-monthly-budget"
+  name              = "punt-btg-dev-monthly-budget"
   budget_type       = "COST"
   limit_amount      = "500"  # $500/month threshold for dev
   limit_unit        = "USD"
@@ -338,7 +340,7 @@ resource "aws_budgets_budget" "monthly" {
   }
 
   tags = {
-    Name = "btg-dev-monthly-budget"
+    Name = "punt-btg-dev-monthly-budget"
   }
 }
 

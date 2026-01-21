@@ -16,17 +16,17 @@ This document defines the naming conventions used across Terraform, GitHub Actio
 | **Docker Image** | `ghcr.io/btg-c/btg-gateway-service` | GitHub Container Registry |
 | **Terraform Module** | `gateway_service` | `infrastructure/terraform/env-{env}/main.tf` |
 | **Terraform Service Name** | `gateway` | Used in resource names |
-| **ECS Cluster** | `btg-{env}-cluster` | Created by `ecs-platform` module |
-| **ECS Service** | `btg-{env}-gateway` | Full service name in AWS |
+| **ECS Cluster** | `punt-btg-{env}-cluster` | Created by `ecs-platform` module |
+| **ECS Service** | `punt-btg-{env}-gateway` | Full service name in AWS |
 | **Container Name** | `gateway` | In task definition |
-| **Target Group** | `{env}-gateway-tg` | ALB target group |
-| **CloudWatch Logs** | `/ecs/btg-{env}-gateway` | Log group |
+| **Target Group** | `punt-btg-{env}-gateway-tg` | ALB target group |
+| **CloudWatch Logs** | `/ecs/punt-btg-{env}-gateway` | Log group |
 | **GitHub Workflow** | `gateway-service-deployment.yml` | `.github/workflows/` |
 | **GitHub Dispatch Event** | `deploy-gateway-service` | Repository dispatch type |
 
 **GitHub Environment Secrets (per environment):**
-- `GATEWAY_CLUSTER` = `btg-dev-cluster` | `btg-staging-cluster` | `btg-prod-cluster`
-- `GATEWAY_SERVICE` = `btg-dev-gateway` | `btg-staging-gateway` | `btg-prod-gateway`
+- `GATEWAY_CLUSTER` = `punt-btg-dev-cluster` | `punt-btg-staging-cluster` | `punt-btg-prod-cluster`
+- `GATEWAY_SERVICE` = `punt-btg-dev-gateway` | `punt-btg-staging-gateway` | `punt-btg-prod-gateway`
 - `GATEWAY_ALB_URL` = Environment-specific ALB URL
 
 ---
@@ -39,11 +39,11 @@ This document defines the naming conventions used across Terraform, GitHub Actio
 | **Docker Image** | `ghcr.io/btg-c/btg-auth-server` | GitHub Container Registry |
 | **Terraform Module** | `auth_service` | `infrastructure/terraform/env-{env}/main.tf` |
 | **Terraform Service Name** | `auth-server` | Used in resource names |
-| **ECS Cluster** | `btg-{env}-cluster` | Shared with other services |
-| **ECS Service** | `btg-{env}-auth-server` | Full service name in AWS |
+| **ECS Cluster** | `punt-btg-{env}-cluster` | Shared with other services |
+| **ECS Service** | `punt-btg-{env}-auth-server` | Full service name in AWS |
 | **Container Name** | `auth-server` | In task definition |
-| **Target Group** | `{env}-auth-server-tg` | Internal ALB target group |
-| **CloudWatch Logs** | `/ecs/btg-{env}-auth-server` | Log group |
+| **Target Group** | `punt-btg-{env}-auth-server-tg` | Internal ALB target group |
+| **CloudWatch Logs** | `/ecs/punt-btg-{env}-auth-server` | Log group |
 | **GitHub Workflow** | `auth-server-deployment.yml` | `.github/workflows/` |
 | **GitHub Dispatch Event** | `deploy-auth-server` | Repository dispatch type |
 

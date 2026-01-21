@@ -209,4 +209,5 @@ git push origin develop
 
 - [Deployment Runbook](../../docs/operations/DEPLOYMENT-RUNBOOK.md)
 - [Quick Start Guide](../../docs/development/QUICK-START.md)
-- [AWS Setup](../../docs/infrastructure/AWS-SETUP.md)
+- [AWS Organization Setup](../../docs/infrastructure/AWS-ORGANIZATION-SETUP.md)
+- [BTG Deployment](../../docs/infrastructure/BTG-AWS-DEPLOYMENT.md)

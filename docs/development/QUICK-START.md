@@ -197,9 +197,9 @@ gh repo view BTG-C/btg-devops --json viewerPermission
 Now that you're set up:
 
 1. **Read Architecture Overview:** [docs/architecture/OVERVIEW.md](../architecture/OVERVIEW.md)
-2. **Learn Developer Workflow:** [docs/development/DEVELOPER-WORKFLOW.md](DEVELOPER-WORKFLOW.md)
+2. **Learn Configuration Flow:** [docs/development/CONFIGURATION-FLOW.md](CONFIGURATION-FLOW.md)
 3. **Understand Deployment Process:** [docs/operations/DEPLOYMENT-RUNBOOK.md](../operations/DEPLOYMENT-RUNBOOK.md)
-4. **Set up Local Environment:** [docs/development/LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md)
+4. **Set up Development Environment:** [docs/development/DEV_ENV_SETUP.md](DEV_ENV_SETUP.md)
 
 ---
 

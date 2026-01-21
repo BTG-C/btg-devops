@@ -616,6 +616,6 @@ diff services/gateway-service/config/dev.json \
 ## Related Documentation
 
 - [GitHub Environments Setup](./GITHUB-ENVIRONMENTS-GATEWAY.md)
-- [Gateway Service Configuration](../../services/gateway-service/README.md)
+- [Service Naming Conventions](../../services/SERVICE-NAMING-CONVENTION.md)
 - [Deployment Runbook](../operations/DEPLOYMENT-RUNBOOK.md)
-- [AWS Secrets Manager Setup](../infrastructure/AWS-SETUP.md)
+- [AWS Secrets Manager Setup](../infrastructure/BTG-AWS-DEPLOYMENT.md)

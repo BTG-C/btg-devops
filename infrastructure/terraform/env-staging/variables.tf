@@ -8,10 +8,22 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "project_name" {
-  description = "Project name"
+variable "organization" {
+  description = "Organization name (short form of PuntEdge)"
+  type        = string
+  default     = "punt"
+}
+
+variable "product" {
+  description = "Product name"
   type        = string
   default     = "btg"
+}
+
+variable "project_name" {
+  description = "Full project name (organization-product-environment)"
+  type        = string
+  default     = "punt-btg"
 }
 
 variable "environment" {

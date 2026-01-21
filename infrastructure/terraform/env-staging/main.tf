@@ -11,11 +11,11 @@ terraform {
   
   # Remote state backend - staging account
   backend "s3" {
-    bucket         = "btg-terraform-state-staging"
-    key            = "mfe-infrastructure/staging/terraform.tfstate"
+    bucket         = "punt-terraform-state-staging"
+    key            = "btg/staging/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "btg-terraform-locks-staging"
+    dynamodb_table = "punt-terraform-locks-staging"
   }
   
   required_providers {
@@ -37,11 +37,13 @@ provider "aws" {
   
   default_tags {
     tags = {
-      Project     = "BTG-MFE"
-      Environment = "staging"
-      ManagedBy   = "Terraform"
-      CostCenter  = "Engineering"
-      Owner       = "DevOps"
+      Organization = "PuntEdge"
+      Product      = "BTG"
+      Environment  = "staging"
+      ManagedBy    = "Terraform"
+      CostCenter   = "btg-engineering"
+      Owner        = "DevOps"
+      Repository   = "btg-devops"
     }
   }
 }
@@ -317,7 +319,7 @@ module "enhancer_service" {
 # 9. Cost Monitoring (AWS Budget)
 # ------------------------------------------------------------------------------
 resource "aws_budgets_budget" "monthly" {
-  name              = "btg-staging-monthly-budget"
+  name              = "punt-btg-staging-monthly-budget"
   budget_type       = "COST"
   limit_amount      = "700"  # $700/month threshold for staging
   limit_unit        = "USD"
@@ -341,7 +343,7 @@ resource "aws_budgets_budget" "monthly" {
   }
 
   tags = {
-    Name = "btg-staging-monthly-budget"
+    Name = "punt-btg-staging-monthly-budget"
   }
 }
 

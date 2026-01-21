@@ -22,12 +22,14 @@ provider "aws" {
 
 # S3 Bucket for Terraform State
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "btg-terraform-state-dev"
+  bucket = "punt-terraform-state-dev"
   
   tags = {
-    Name        = "Terraform State Storage - Dev"
-    Environment = "dev"
-    ManagedBy   = "Terraform"
+    Name         = "Terraform State Storage - Dev"
+    Organization = "PuntEdge"
+    Product      = "BTG"
+    Environment  = "dev"
+    ManagedBy    = "Terraform"
   }
 }
 
@@ -60,7 +62,7 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
 
 # DynamoDB Table for State Locking
 resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "btg-terraform-locks-dev"
+  name         = "punt-terraform-locks-dev"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
   
@@ -70,9 +72,11 @@ resource "aws_dynamodb_table" "terraform_locks" {
   }
   
   tags = {
-    Name        = "Terraform State Locks - Dev"
-    Environment = "dev"
-    ManagedBy   = "Terraform"
+    Name         = "Terraform State Locks - Dev"
+    Organization = "PuntEdge"
+    Product      = "BTG"
+    Environment  = "dev"
+    ManagedBy    = "Terraform"
   }
 }
 
