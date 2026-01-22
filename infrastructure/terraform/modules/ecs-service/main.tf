@@ -149,4 +149,61 @@ resource "aws_ecs_service" "main" {
   }
 
   depends_on = [aws_lb_listener_rule.main]
+  
+  # Ignore desired_count changes when auto-scaling is enabled
+  lifecycle {
+    ignore_changes = var.enable_autoscaling ? [desired_count] : []
+  }
+}
+
+# ==============================================================================
+# Auto-Scaling Configuration
+# ==============================================================================
+
+# 8. Application Auto-Scaling Target
+resource "aws_appautoscaling_target" "ecs_target" {
+  count              = var.enable_autoscaling ? 1 : 0
+  max_capacity       = var.autoscaling_max_capacity
+  min_capacity       = var.autoscaling_min_capacity
+  resource_id        = "service/${split("/", var.cluster_id)[1]}/${aws_ecs_service.main.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+# 9. CPU-Based Auto-Scaling Policy
+resource "aws_appautoscaling_policy" "ecs_cpu_policy" {
+  count              = var.enable_autoscaling ? 1 : 0
+  name               = "${var.project_name}-${var.environment}-${var.service_name}-cpu-scaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_target[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_target[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_target[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = var.autoscaling_cpu_target
+    scale_in_cooldown  = 300  # 5 minutes cooldown before scaling in
+    scale_out_cooldown = 60   # 1 minute cooldown before scaling out
+  }
+}
+
+# 10. Memory-Based Auto-Scaling Policy
+resource "aws_appautoscaling_policy" "ecs_memory_policy" {
+  count              = var.enable_autoscaling ? 1 : 0
+  name               = "${var.project_name}-${var.environment}-${var.service_name}-memory-scaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_target[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_target[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_target[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+    target_value       = var.autoscaling_memory_target
+    scale_in_cooldown  = 300  # 5 minutes cooldown before scaling in
+    scale_out_cooldown = 60   # 1 minute cooldown before scaling out
+  }
 }

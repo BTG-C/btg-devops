@@ -48,6 +48,12 @@ variable "skip_final_snapshot" {
   default     = false
 }
 
+variable "backup_retention_days" {
+  description = "Number of days to retain backups (1-35)"
+  type        = number
+  default     = 7
+}
+
 variable "databases" {
   description = "Map of databases to create with their own credentials"
   type = map(object({

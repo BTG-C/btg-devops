@@ -38,16 +38,22 @@ variable "github_repo" {
   default     = "BTG-C/btg-*-mfe"
 }
 
-variable "domain_name" {
-  description = "Custom domain (optional)"
+variable "root_domain" {
+  description = "Root domain name registered in Route 53"
   type        = string
-  default     = ""
+  default     = "puntedge.com"
 }
 
-variable "certificate_arn" {
-  description = "ACM certificate ARN (optional)"
+variable "enable_custom_domain" {
+  description = "Enable custom domain and SSL certificate"
+  type        = bool
+  default     = true  # Staging should use custom domain
+}
+
+variable "subdomain" {
+  description = "Subdomain for this environment (e.g., 'staging.btg')"
   type        = string
-  default     = ""
+  default     = "staging.btg"
 }
 
 variable "alert_email" {

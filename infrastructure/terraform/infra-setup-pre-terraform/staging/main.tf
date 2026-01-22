@@ -16,13 +16,13 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
   # Authenticate with staging AWS account credentials
 }
 
 # S3 Bucket for Terraform State
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "punt-terraform-state-staging"
+  bucket = "${var.organization}-terraform-state-${var.environment}"
   
   tags = {
     Name         = "Terraform State Storage - Staging"
@@ -62,7 +62,7 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
 
 # DynamoDB Table for State Locking
 resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "punt-terraform-locks-staging"
+  name         = "${var.organization}-terraform-locks-${var.environment}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
   

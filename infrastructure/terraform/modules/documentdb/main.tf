@@ -60,7 +60,7 @@ resource "aws_docdb_cluster" "main" {
   engine                          = "docdb"
   master_username                 = var.master_username
   master_password                 = local.db_password
-  backup_retention_period         = 7
+  backup_retention_period         = var.backup_retention_days
   preferred_backup_window         = "03:00-05:00"  # 3-5 AM UTC (low traffic)
   skip_final_snapshot             = var.skip_final_snapshot
   deletion_protection             = var.environment == "prod" ? true : false
