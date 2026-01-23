@@ -95,8 +95,24 @@ module "acm_certificate" {
 }
 
 # ------------------------------------------------------------------------------
-# 3. DocumentDB Module (Shared Database Cluster)
+# 3. ECS Platform Module (Cluster, ALB, Shared Components)
 # ------------------------------------------------------------------------------
+module "ecs_platform" {
+  source = "../modules/ecs-platform"
+
+  project_name           = var.project_name
+  environment            = var.environment
+  vpc_id                 = module.networking.vpc_id
+  vpc_cidr               = module.networking.vpc_cidr
+  public_subnets         = module.networking.public_subnet_ids
+  private_subnets        = module.networking.private_subnet_ids
+  ssl_certificate_arn    = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Optional for dev
+}
+
+# ------------------------------------------------------------------------------
+# 4. DocumentDB Module (Shared Database Cluster)
+# ------------------------------------------------------------------------------
+# IMPORTANT: Must come AFTER ecs_platform to reference ecs_tasks_sg_id
 module "documentdb" {
   source = "../modules/documentdb"
 
@@ -111,21 +127,6 @@ module "documentdb" {
   instance_count          = 1                     # Single node for dev (saves $55/month)
   backup_retention_days   = 1                     # 1-day retention for dev
   skip_final_snapshot     = true                  # Dev only - prod should be false
-}
-
-# ------------------------------------------------------------------------------
-# 4. ECS Platform Module (Cluster, ALB, Shared Components)
-# ------------------------------------------------------------------------------
-module "ecs_platform" {
-  source = "../modules/ecs-platform"
-
-  project_name           = var.project_name
-  environment            = var.environment
-  vpc_id                 = module.networking.vpc_id
-  vpc_cidr               = module.networking.vpc_cidr
-  public_subnets         = module.networking.public_subnet_ids
-  private_subnets        = module.networking.private_subnet_ids
-  ssl_certificate_arn    = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Optional for dev
 }
 
 # ------------------------------------------------------------------------------
@@ -201,11 +202,12 @@ module "gateway_service" {
   container_image  = var.gateway_service_image
   container_port   = 8080
   desired_count    = 1
-  cpu              = 512
-  memory           = 1024
+  cpu              = 256
+  memory           = 512
+  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
   
   # Auto-scaling configuration
-  enable_autoscaling       = true
+  enable_autoscaling       = false
   autoscaling_min_capacity = 1
   autoscaling_max_capacity = 3  # Dev: scale to max 3 tasks
   autoscaling_cpu_target   = 70 # Scale when CPU > 70%
@@ -255,9 +257,10 @@ module "auth_service" {
   desired_count    = 1
   cpu              = 256
   memory           = 512
+  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
   
   # Auto-scaling configuration
-  enable_autoscaling       = true
+  enable_autoscaling       = false
   autoscaling_min_capacity = 1
   autoscaling_max_capacity = 2  # Dev: auth scales to 2 max
   autoscaling_cpu_target   = 70
@@ -305,11 +308,12 @@ module "score_odd_service" {
   container_image  = var.score_odd_service_image
   container_port   = 8080
   desired_count    = 1
-  cpu              = 512
-  memory           = 1024
+  cpu              = 256
+  memory           = 512
+  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
   
   # Auto-scaling configuration
-  enable_autoscaling       = true
+  enable_autoscaling       = false
   autoscaling_min_capacity = 1
   autoscaling_max_capacity = 3  # Dev: scale to max 3 tasks
   autoscaling_cpu_target   = 70
@@ -357,11 +361,12 @@ module "enhancer_service" {
   container_image  = var.enhancer_service_image
   container_port   = 8080
   desired_count    = 1
-  cpu              = 512   # Increased: I/O + CPU intensive (streaming + computation)
-  memory           = 1024  # Increased: Needs memory for streaming buffers
+  cpu              = 256   # Dev: Reduced for cost optimization
+  memory           = 512   # Dev: Reduced for cost optimization
+  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
   
   # Auto-scaling configuration
-  enable_autoscaling       = true
+  enable_autoscaling       = false
   autoscaling_min_capacity = 1
   autoscaling_max_capacity = 2  # Dev: enhancer scales to 2 max
   autoscaling_cpu_target   = 70

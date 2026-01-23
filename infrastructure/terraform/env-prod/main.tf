@@ -96,7 +96,25 @@ module "acm_certificate" {
 }
 
 # ------------------------------------------------------------------------------
-# 3. DocumentDB Module (Shared Database Cluster)
+# 3. ECS Platform Module (Cluster, ALB, Shared Components)
+# IMPORTANT: Must come BEFORE documentdb to provide ecs_tasks_sg_id
+# ------------------------------------------------------------------------------
+module "ecs_platform" {
+  source = "../modules/ecs-platform"
+
+  project_name               = var.project_name
+  environment                = var.environment
+  vpc_id                     = module.networking.vpc_id
+  vpc_cidr                   = module.networking.vpc_cidr
+  public_subnets             = module.networking.public_subnet_ids
+  private_subnets            = module.networking.private_subnet_ids
+  enable_deletion_protection = true  # Production: Prevent accidental ALB deletion
+  ssl_certificate_arn        = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # REQUIRED for production
+}
+
+# ------------------------------------------------------------------------------
+# 4. DocumentDB Module (Shared Database Cluster)
+# IMPORTANT: Must come AFTER ecs_platform to reference ecs_tasks_sg_id
 # ------------------------------------------------------------------------------
 module "documentdb" {
   source = "../modules/documentdb"
@@ -112,22 +130,6 @@ module "documentdb" {
   instance_count          = 3                 # 3 nodes for HA + read scaling
   backup_retention_days   = 30                # 30-day retention for production
   skip_final_snapshot     = false             # Always keep final snapshot in prod
-}
-
-# ------------------------------------------------------------------------------
-# 4. ECS Platform Module (Cluster, ALB, Shared Components)
-# ------------------------------------------------------------------------------
-module "ecs_platform" {
-  source = "../modules/ecs-platform"
-
-  project_name               = var.project_name
-  environment                = var.environment
-  vpc_id                     = module.networking.vpc_id
-  vpc_cidr                   = module.networking.vpc_cidr
-  public_subnets             = module.networking.public_subnet_ids
-  private_subnets            = module.networking.private_subnet_ids
-  enable_deletion_protection = true  # Production: Prevent accidental ALB deletion
-  ssl_certificate_arn        = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # REQUIRED for production
 }
 
 # ------------------------------------------------------------------------------
@@ -406,14 +408,14 @@ module "enhancer_service" {
 resource "aws_budgets_budget" "monthly" {
   name              = "punt-btg-prod-monthly-budget"
   budget_type       = "COST"
-  limit_amount      = "1000"  # $1000/month threshold
+  limit_amount      = "4000"  # $4000/month threshold for production
   limit_unit        = "USD"
   time_unit         = "MONTHLY"
   time_period_start = "2026-01-01_00:00"
   
   notification {
     comparison_operator        = "GREATER_THAN"
-    threshold                  = 80  # Alert at 80% ($800)
+    threshold                  = 70  # Alert at 70% ($2800) - Warning
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.alert_email]
@@ -421,7 +423,7 @@ resource "aws_budgets_budget" "monthly" {
   
   notification {
     comparison_operator        = "GREATER_THAN"
-    threshold                  = 100  # Alert at 100% ($1000)
+    threshold                  = 90  # Alert at 90% ($3600) - Critical
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.alert_email]
@@ -429,7 +431,7 @@ resource "aws_budgets_budget" "monthly" {
   
   notification {
     comparison_operator        = "GREATER_THAN"
-    threshold                  = 120  # Alert at 120% ($1200) - overspend
+    threshold                  = 110  # Alert at 110% ($4400) - Emergency
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.alert_email]

@@ -19,8 +19,3 @@ variable "enable_nat_gateway" {
   type        = bool
   default     = true
 }
-
-variable "certificate_arn" {
-  description = "ACM Certificate ARN for the Public ALB"
-  type        = string
-}

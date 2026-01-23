@@ -85,6 +85,13 @@ variable "private_subnets" {
   description = "List of private subnet IDs for task placement"
   type        = list(string)
 }
+
+variable "assign_public_ip" {
+  description = "Assign public IP to tasks (required for dev without NAT, false for staging/prod with NAT)"
+  type        = bool
+  default     = false
+}
+
 variable "environment_variables" {
   type = list(object({
     name  = string

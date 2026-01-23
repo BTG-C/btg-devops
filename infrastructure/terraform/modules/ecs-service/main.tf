@@ -138,8 +138,7 @@ resource "aws_ecs_service" "main" {
   network_configuration {
     security_groups  = [var.security_group_id]
     subnets          = var.private_subnets
-    assign_public_ip = false # True if No NAT, False if NAT exists. Going with False (Private) assuming Backend Service Module provides NAT logic or we swap to public if needed.
-    # Actually, in 'networking' module I made NAT logic. 
+    assign_public_ip = var.assign_public_ip
   }
 
   load_balancer {

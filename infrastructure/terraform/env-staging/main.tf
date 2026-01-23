@@ -95,7 +95,25 @@ module "acm_certificate" {
 }
 
 # ------------------------------------------------------------------------------
-# 3. DocumentDB Module (Shared Database Cluster)
+# 3. ECS Platform Module (Cluster, ALB, Shared Components)
+# IMPORTANT: Must come BEFORE documentdb to provide ecs_tasks_sg_id
+# ------------------------------------------------------------------------------
+module "ecs_platform" {
+  source = "../modules/ecs-platform"
+
+  project_name               = var.project_name
+  environment                = var.environment
+  vpc_id                     = module.networking.vpc_id
+  vpc_cidr                   = module.networking.vpc_cidr
+  public_subnets             = module.networking.public_subnet_ids
+  private_subnets            = module.networking.private_subnet_ids
+  enable_deletion_protection = true  # Staging: Protect shared environment
+  ssl_certificate_arn        = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Required for staging
+}
+
+# ------------------------------------------------------------------------------
+# 4. DocumentDB Module (Shared Database Cluster)
+# IMPORTANT: Must come AFTER ecs_platform to reference ecs_tasks_sg_id
 # ------------------------------------------------------------------------------
 module "documentdb" {
   source = "../modules/documentdb"
@@ -111,22 +129,6 @@ module "documentdb" {
   instance_count          = 2                 # Replica set for HA testing
   backup_retention_days   = 7                 # 7-day retention for staging
   skip_final_snapshot     = false             # Keep final snapshot
-}
-
-# ------------------------------------------------------------------------------
-# 4. ECS Platform Module (Cluster, ALB, Shared Components)
-# ------------------------------------------------------------------------------
-module "ecs_platform" {
-  source = "../modules/ecs-platform"
-
-  project_name               = var.project_name
-  environment                = var.environment
-  vpc_id                     = module.networking.vpc_id
-  vpc_cidr                   = module.networking.vpc_cidr
-  public_subnets             = module.networking.public_subnet_ids
-  private_subnets            = module.networking.private_subnet_ids
-  enable_deletion_protection = true  # Staging: Protect shared environment
-  ssl_certificate_arn        = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Required for staging
 }
 
 # ------------------------------------------------------------------------------
@@ -406,14 +408,14 @@ module "enhancer_service" {
 resource "aws_budgets_budget" "monthly" {
   name              = "punt-btg-staging-monthly-budget"
   budget_type       = "COST"
-  limit_amount      = "700"  # $700/month threshold for staging
+  limit_amount      = "900"  # $900/month threshold for staging
   limit_unit        = "USD"
   time_unit         = "MONTHLY"
   time_period_start = "2026-01-01_00:00"
   
   notification {
     comparison_operator        = "GREATER_THAN"
-    threshold                  = 80  # Alert at 80% ($560)
+    threshold                  = 80  # Alert at 80% ($720)
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.alert_email]
@@ -421,7 +423,7 @@ resource "aws_budgets_budget" "monthly" {
   
   notification {
     comparison_operator        = "GREATER_THAN"
-    threshold                  = 100  # Alert at 100% ($700)
+    threshold                  = 100  # Alert at 100% ($900)
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.alert_email]
