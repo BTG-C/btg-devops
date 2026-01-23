@@ -20,19 +20,23 @@ data "aws_route53_zone" "main" {
 # ==============================================================================
 # Terraform Configuration
 # ==============================================================================
+# Backend: Uses S3 bucket created by infra-setup-pre-terraform
+# State Location: s3://punt-terraform-state-dev/btg/dev/terraform.tfstate
+# Locking: DynamoDB table punt-terraform-locks-dev prevents concurrent modifications
+# ==============================================================================
 
 terraform {
   required_version = ">= 1.0"
   
-  # Remote state backend - prevents state conflicts
+  # Remote state backend - stores state in S3 (created by infra-setup-pre-terraform)
+  # This enables team collaboration and prevents state conflicts
   # NOTE: Backend block does not support variables (Terraform limitation)
-  # Region must match var.aws_region but cannot be interpolated here
   backend "s3" {
-    bucket         = "punt-terraform-state-dev"
-    key            = "btg/dev/terraform.tfstate"
-    region         = "us-east-1"  # Must match aws_region variable
-    encrypt        = true
-    dynamodb_table = "punt-terraform-locks-dev"
+    bucket         = "punt-terraform-state-dev"      # Created by infra-setup-pre-terraform/dev
+    key            = "btg/dev/terraform.tfstate"     # Unique state file path for this environment
+    region         = "us-east-1"                     # Must match var.aws_region
+    encrypt        = true                             # AES-256 encryption at rest
+    dynamodb_table = "punt-terraform-locks-dev"      # State locking table (prevents concurrent updates)
   }
   
   required_providers {
@@ -68,6 +72,14 @@ provider "aws" {
 # ------------------------------------------------------------------------------
 # 1. Networking Module (VPC, Subnets)
 # ------------------------------------------------------------------------------
+# Creates:
+#   - VPC with 10.0.0.0/16 CIDR
+#   - 2 Public Subnets (for ALBs)
+#   - 2 Private Subnets (for ECS tasks, DocumentDB)
+#   - Internet Gateway (for public subnet internet access)
+#   - NAT Gateway: DISABLED in dev (cost optimization, ECS tasks use public IPs)
+# Cost Savings: No NAT Gateway saves $33/month in dev
+# ------------------------------------------------------------------------------
 module "networking" {
   source = "../modules/networking"
 
@@ -79,6 +91,11 @@ module "networking" {
 
 # ------------------------------------------------------------------------------
 # 2. ACM Certificate (SSL/TLS) - Optional
+# ------------------------------------------------------------------------------
+# Creates SSL/TLS certificate for custom domain (e.g., dev.btg.puntedge.com)
+# Uses DNS validation via Route 53
+# Certificate is used by Public ALB for HTTPS termination
+# Dev Default: Disabled (enable_custom_domain = false) to save costs
 # ------------------------------------------------------------------------------
 module "acm_certificate" {
   count  = var.enable_custom_domain ? 1 : 0
@@ -97,6 +114,14 @@ module "acm_certificate" {
 # ------------------------------------------------------------------------------
 # 3. ECS Platform Module (Cluster, ALB, Shared Components)
 # ------------------------------------------------------------------------------
+# Creates:
+#   - ECS Fargate Cluster (serverless container orchestration)
+#   - Public ALB (for gateway service - internet-facing)
+#   - Internal ALB (for auth, score-odd, enhancer - VPC-only)
+#   - Security Groups (ALB -> ECS tasks access control)
+#   - CloudWatch Container Insights (monitoring)
+# Dependencies: Requires networking module (VPC, subnets)
+# ------------------------------------------------------------------------------
 module "ecs_platform" {
   source = "../modules/ecs-platform"
 
@@ -110,9 +135,18 @@ module "ecs_platform" {
 }
 
 # ------------------------------------------------------------------------------
-# 4. DocumentDB Module (Shared Database Cluster)
+# 4. DocumentDB Module (MongoDB-Compatible Database)
 # ------------------------------------------------------------------------------
+# Creates:
+#   - DocumentDB cluster (MongoDB 5.0 compatible)
+#   - Single instance: db.t4g.medium (ARM-based, cost-optimized)
+#   - Master password stored in AWS Secrets Manager
+#   - TLS encryption enabled for connections
+#   - Automated backups: 1-day retention (dev only)
+# Security: Only accessible from ECS tasks security group
 # IMPORTANT: Must come AFTER ecs_platform to reference ecs_tasks_sg_id
+# Cost: ~$60/month (single node, minimal for dev)
+# ------------------------------------------------------------------------------
 module "documentdb" {
   source = "../modules/documentdb"
 
@@ -130,7 +164,15 @@ module "documentdb" {
 }
 
 # ------------------------------------------------------------------------------
-# 5. MFE S3 Bucket
+# 5. MFE S3 Bucket (Frontend Asset Storage)
+# ------------------------------------------------------------------------------
+# Creates:
+#   - S3 bucket for hosting MFE bundles (Shell, Enhancer, etc.)
+#   - Versioning enabled (rollback capability)
+#   - Server-side encryption (AES-256)
+#   - Lifecycle policy: Delete old versions after 7 days (dev)
+#   - Public access blocked (CloudFront-only access via OAI)
+# Cost: ~$1-5/month depending on storage and data transfer
 # ------------------------------------------------------------------------------
 module "mfe_s3" {
   source = "../modules/mfe-s3"
@@ -141,7 +183,16 @@ module "mfe_s3" {
 }
 
 # ------------------------------------------------------------------------------
-# 6. MFE CloudFront Distribution
+# 6. MFE CloudFront Distribution (CDN)
+# ------------------------------------------------------------------------------
+# Creates:
+#   - CloudFront distribution (global CDN)
+#   - Origin: S3 bucket via Origin Access Identity (secure access)
+#   - Price Class: PriceClass_100 (US, Canada, Europe - cost-optimized for dev)
+#   - Default caching behavior (optimized for static assets)
+#   - Custom domain support (optional, disabled in dev by default)
+# Access: CloudFront URL (e.g., d1234567890.cloudfront.net)
+# Cost: ~$5-10/month (low traffic dev environment)
 # ------------------------------------------------------------------------------
 module "mfe_cloudfront" {
   source = "../modules/mfe-cloudfront"
@@ -159,6 +210,12 @@ module "mfe_cloudfront" {
 # ------------------------------------------------------------------------------
 # 7. Route53 DNS Records - Optional
 # ------------------------------------------------------------------------------
+# Creates:
+#   - A record pointing subdomain to CloudFront (e.g., dev.btg.puntedge.com)
+#   - Uses existing Route 53 hosted zone (must be created manually)
+# Dev Default: Disabled (enable_custom_domain = false)
+# Enable when: Ready to use custom domain instead of CloudFront URL
+# ------------------------------------------------------------------------------
 module "route53" {
   count  = var.enable_custom_domain ? 1 : 0
   source = "../modules/route53"
@@ -175,7 +232,14 @@ module "route53" {
 }
 
 # ------------------------------------------------------------------------------
-# 8. MFE IAM (GitHub Actions)
+# 8. MFE IAM (GitHub Actions OIDC)
+# ------------------------------------------------------------------------------
+# Creates:
+#   - IAM role for GitHub Actions (passwordless authentication via OIDC)
+#   - Policies: S3 upload, CloudFront invalidation
+#   - Trust relationship: Allows only repos matching pattern (btg-*-mfe)
+# Used by: GitHub Actions workflows to deploy MFE bundles
+# Security: No static credentials, uses temporary tokens via OIDC
 # ------------------------------------------------------------------------------
 module "mfe_iam" {
   source = "../modules/mfe-iam"
@@ -189,6 +253,16 @@ module "mfe_iam" {
 
 # ------------------------------------------------------------------------------
 # 9. Gateway Service (Public ALB)
+# ------------------------------------------------------------------------------
+# API Gateway service - internet-facing entry point
+# Resources:
+#   - CPU: 0.25 vCPU (256 units) - Cost-optimized for dev
+#   - Memory: 512 MB
+#   - Desired Count: 1 task (no auto-scaling in dev)
+#   - Public IP: Enabled (required since NAT Gateway disabled)
+# Routing: Public ALB -> /gateway-service/* -> This service
+# Security: Private subnet + security group (ALB can reach, internet cannot)
+# Cost: ~$11/month
 # ------------------------------------------------------------------------------
 module "gateway_service" {
   source = "../modules/ecs-service"
@@ -243,6 +317,16 @@ module "gateway_service" {
 # ------------------------------------------------------------------------------
 # 10. Auth Service (Internal ALB)
 # ------------------------------------------------------------------------------
+# Authentication & authorization service - VPC-internal only
+# Resources:
+#   - CPU: 0.25 vCPU (256 units) - Cost-optimized for dev
+#   - Memory: 512 MB
+#   - Desired Count: 1 task (no auto-scaling in dev)
+#   - Public IP: Enabled (required since NAT Gateway disabled)
+# Routing: Internal ALB -> /auth-server/* -> This service
+# Security: Accessible only from within VPC (other services)
+# Cost: ~$11/month
+# ------------------------------------------------------------------------------
 module "auth_service" {
   source = "../modules/ecs-service"
 
@@ -294,7 +378,17 @@ module "auth_service" {
 }
 
 # ------------------------------------------------------------------------------
-# 11. Score Odd Service (Internal ALB)
+# 11. Score-Odd Service (Internal ALB)
+# ------------------------------------------------------------------------------
+# Sports scoring and odds calculation service - VPC-internal only
+# Resources:
+#   - CPU: 0.25 vCPU (256 units) - Cost-optimized for dev
+#   - Memory: 512 MB
+#   - Desired Count: 1 task (no auto-scaling in dev)
+#   - Public IP: Enabled (required since NAT Gateway disabled)
+# Routing: Internal ALB -> /score-odd-service/* -> This service
+# Database: Connects to DocumentDB for score/odds data
+# Cost: ~$11/month
 # ------------------------------------------------------------------------------
 module "score_odd_service" {
   source = "../modules/ecs-service"
@@ -349,6 +443,16 @@ module "score_odd_service" {
 # ------------------------------------------------------------------------------
 # 12. Enhancer Service (Internal ALB)
 # ------------------------------------------------------------------------------
+# Data enhancement and enrichment service - VPC-internal only
+# Resources:
+#   - CPU: 0.25 vCPU (256 units) - Cost-optimized for dev
+#   - Memory: 512 MB
+#   - Desired Count: 1 task (no auto-scaling in dev)
+#   - Public IP: Enabled (required since NAT Gateway disabled)
+# Routing: Internal ALB -> /enhancer-service/* -> This service
+# Note: Production uses higher resources for I/O + CPU intensive streaming
+# Cost: ~$11/month
+# ------------------------------------------------------------------------------
 module "enhancer_service" {
   source = "../modules/ecs-service"
 
@@ -401,6 +505,14 @@ module "enhancer_service" {
 
 # ------------------------------------------------------------------------------
 # 13. Cost Monitoring (AWS Budget)
+# ------------------------------------------------------------------------------
+# Budget: $500/month (comfortable margin above ~$150-170 actual dev costs)
+# Alerts:
+#   - 80% ($400): Warning - approaching budget limit
+#   - 100% ($500): Critical - budget exceeded
+# Notifications: Email sent to var.alert_email
+# Purpose: Prevent unexpected cost overruns, detect resource leaks
+# Actual Dev Cost: ~$150-170/month (ECS $44 + DocumentDB $60 + ALB $32 + misc)
 # ------------------------------------------------------------------------------
 resource "aws_budgets_budget" "monthly" {
   name              = "punt-btg-dev-monthly-budget"
