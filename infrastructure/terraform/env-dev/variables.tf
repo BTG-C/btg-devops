@@ -50,6 +50,12 @@ variable "enable_custom_domain" {
   default     = false  # Set to true when ready to use custom domain
 }
 
+variable "assign_public_ip" {
+  description = "Assign public IP to ECS tasks (true for dev without NAT, false for staging/prod with NAT)"
+  type        = bool
+  default     = true  # Dev: true (no NAT Gateway)
+}
+
 variable "subdomain" {
   description = "Subdomain for this environment (e.g., 'dev.btg')"
   type        = string

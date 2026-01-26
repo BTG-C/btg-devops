@@ -47,7 +47,13 @@ variable "root_domain" {
 variable "enable_custom_domain" {
   description = "Enable custom domain and SSL certificate"
   type        = bool
-  default     = true  # Staging should use custom domain
+  default     = true  # Staging: Enable custom domain
+}
+
+variable "assign_public_ip" {
+  description = "Assign public IP to ECS tasks (true for dev without NAT, false for staging/prod with NAT)"
+  type        = bool
+  default     = false  # Staging: false (uses NAT Gateway)
 }
 
 variable "subdomain" {
@@ -88,4 +94,11 @@ variable "enhancer_service_image" {
   description = "Enhancer service Docker image (updated by CI/CD)"
   type        = string
   default     = "public.ecr.aws/docker/library/nginx:alpine"
+}
+
+
+variable "sns_admin_emails" {
+  description = "List of admin emails to subscribe to SNS topics (optional, for testing)"
+  type        = list(string)
+  default     = []
 }

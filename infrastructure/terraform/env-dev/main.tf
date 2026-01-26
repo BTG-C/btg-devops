@@ -354,9 +354,9 @@ module "gateway_service" {
   container_image  = var.gateway_service_image
   container_port   = 8080
   desired_count    = 1
-  cpu              = 256
-  memory           = 512
-  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  cpu              = 512
+  memory           = 1024
+  assign_public_ip = var.assign_public_ip
   
   # IAM Roles from centralized IAM module
   execution_role_arn = module.iam.ecs_task_execution_role_arns["gateway-service"]
@@ -420,11 +420,11 @@ module "auth_service" {
   cluster_id       = module.ecs_platform.cluster_id
   service_name     = "auth-server"
   container_image  = var.auth_service_image
-  container_port   = 8080
+  container_port   = 8080  # Standard port for all services
   desired_count    = 1
   cpu              = 256
   memory           = 512
-  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  assign_public_ip = var.assign_public_ip
   
   # IAM Roles from centralized IAM module (with SNS permissions)
   execution_role_arn = module.iam.ecs_task_execution_role_arns["auth-server"]
@@ -495,11 +495,11 @@ module "score_odd_service" {
   cluster_id       = module.ecs_platform.cluster_id
   service_name     = "score-odd-service"
   container_image  = var.score_odd_service_image
-  container_port   = 8080
+  container_port   = 8080  # Standard port for all services
   desired_count    = 1
-  cpu              = 256
-  memory           = 512
-  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  cpu              = 512
+  memory           = 1024
+  assign_public_ip = var.assign_public_ip
   
   # IAM Roles from centralized IAM module
   execution_role_arn = module.iam.ecs_task_execution_role_arns["score-odd-service"]
@@ -562,11 +562,11 @@ module "enhancer_service" {
   cluster_id       = module.ecs_platform.cluster_id
   service_name     = "enhancer-service"
   container_image  = var.enhancer_service_image
-  container_port   = 8080
+  container_port   = 8080  # Standard port for all services
   desired_count    = 1
   cpu              = 256   # Dev: Reduced for cost optimization
   memory           = 512   # Dev: Reduced for cost optimization
-  assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  assign_public_ip = var.assign_public_ip
   
   # IAM Roles from centralized IAM module
   execution_role_arn = module.iam.ecs_task_execution_role_arns["enhancer-service"]

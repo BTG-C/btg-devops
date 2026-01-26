@@ -73,12 +73,23 @@ module "networking" {
 
   project_name       = var.project_name
   environment        = var.environment
-  vpc_cidr           = "10.0.0.0/16"
+  vpc_cidr           = "10.0.0.0/16"  # Same CIDR across all environments (separate AWS accounts)
   enable_nat_gateway = true  # Enable NAT for staging/prod
 }
 
 # ------------------------------------------------------------------------------
-# 2. ACM Certificate (SSL/TLS) - Optional
+# 2. MFE S3 Bucket (Frontend Asset Storage)
+# ------------------------------------------------------------------------------
+module "mfe_s3" {
+  source = "../modules/mfe-s3"
+  
+  project_name   = var.project_name
+  environment    = var.environment
+  retention_days = 14  # Staging: moderate retention
+}
+
+# ------------------------------------------------------------------------------
+# 3. ACM Certificate (SSL/TLS) - Optional
 # ------------------------------------------------------------------------------
 module "acm_certificate" {
   count  = var.enable_custom_domain ? 1 : 0
@@ -95,56 +106,7 @@ module "acm_certificate" {
 }
 
 # ------------------------------------------------------------------------------
-# 3. ECS Platform Module (Cluster, ALB, Shared Components)
-# IMPORTANT: Must come BEFORE documentdb to provide ecs_tasks_sg_id
-# ------------------------------------------------------------------------------
-module "ecs_platform" {
-  source = "../modules/ecs-platform"
-
-  project_name               = var.project_name
-  environment                = var.environment
-  vpc_id                     = module.networking.vpc_id
-  vpc_cidr                   = module.networking.vpc_cidr
-  public_subnets             = module.networking.public_subnet_ids
-  private_subnets            = module.networking.private_subnet_ids
-  enable_deletion_protection = true  # Staging: Protect shared environment
-  ssl_certificate_arn        = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Required for staging
-}
-
-# ------------------------------------------------------------------------------
-# 4. DocumentDB Module (Shared Database Cluster)
-# IMPORTANT: Must come AFTER ecs_platform to reference ecs_tasks_sg_id
-# ------------------------------------------------------------------------------
-module "documentdb" {
-  source = "../modules/documentdb"
-
-  project_name            = var.project_name
-  environment             = var.environment
-  vpc_id                  = module.networking.vpc_id
-  subnet_ids              = module.networking.private_subnet_ids
-  allowed_security_groups = [module.ecs_platform.ecs_tasks_sg_id]
-  
-  master_username         = "btgadmin"
-  instance_class          = "db.t4g.medium"  # ARM-based (cost-effective for staging)
-  instance_count          = 2                 # Replica set for HA testing
-  backup_retention_days   = 7                 # 7-day retention for staging
-  skip_final_snapshot     = false             # Keep final snapshot
-}
-
-# ------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------
-# 5. MFE S3 Bucket
-# ------------------------------------------------------------------------------
-module "mfe_s3" {
-  source = "../modules/mfe-s3"
-  
-  project_name   = var.project_name
-  environment    = var.environment
-  retention_days = 14  # Staging: moderate retention
-}
-
-# ------------------------------------------------------------------------------
-# 6. MFE CloudFront Distribution
+# 4. MFE CloudFront Distribution
 # ------------------------------------------------------------------------------
 module "mfe_cloudfront" {
   source = "../modules/mfe-cloudfront"
@@ -160,7 +122,7 @@ module "mfe_cloudfront" {
 }
 
 # ------------------------------------------------------------------------------
-# 7. Route53 DNS Records - Optional
+# 8. Route53 DNS Records - Optional
 # ------------------------------------------------------------------------------
 module "route53" {
   count  = var.enable_custom_domain ? 1 : 0
@@ -178,16 +140,111 @@ module "route53" {
 }
 
 # ------------------------------------------------------------------------------
-# 8. MFE IAM (GitHub Actions)
+# 9. Centralized IAM Module
 # ------------------------------------------------------------------------------
-module "mfe_iam" {
-  source = "../modules/mfe-iam"
+module "iam" {
+  source = "../modules/iam"
   
-  project_name                = var.project_name
-  environment                 = var.environment
-  github_repo                 = var.github_repo
-  s3_bucket_arn               = module.mfe_s3.bucket_arn
-  cloudfront_distribution_arn = module.mfe_cloudfront.distribution_arn
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+  
+  # ECS Services IAM Configuration
+  ecs_services = {
+    "gateway-service" = {
+      enable_task_role = false  # No AWS SDK calls needed
+    }
+    "auth-server" = {
+      enable_task_role = true
+      enable_sns       = false  # Will be added via separate policy below
+    }
+    "score-odd-service" = {
+      enable_task_role = false  # Only uses DocumentDB
+    }
+    "enhancer-service" = {
+      enable_task_role = false  # Only uses DocumentDB
+    }
+  }
+  
+  # GitHub Actions OIDC
+  enable_github_actions            = true
+  github_repo                      = var.github_repo
+  mfe_s3_bucket_arn                = module.mfe_s3.bucket_arn
+  mfe_cloudfront_distribution_arn  = module.mfe_cloudfront.distribution_arn
+}
+
+# ------------------------------------------------------------------------------
+# 10. SNS Topics for Notifications
+# ------------------------------------------------------------------------------
+module "auth_notifications_topic" {
+  source = "../modules/sns"
+  
+  project_name = var.project_name
+  environment  = var.environment
+  topic_name   = "auth-notifications"
+  display_name = "BTG Auth Service Notifications (Staging)"
+  purpose      = "User authentication events and notifications"
+  
+  email_subscriptions = var.sns_admin_emails
+  enable_encryption   = true
+}
+
+# ------------------------------------------------------------------------------
+# 10a. Auth Service SNS Permissions
+# ------------------------------------------------------------------------------
+resource "aws_iam_role_policy" "auth_server_sns" {
+  name = "${var.project_name}-${var.environment}-auth-server-sns-publish"
+  role = module.iam.ecs_task_role_names["auth-server"]
+  
+  depends_on = [
+    module.iam,
+    module.auth_notifications_topic
+  ]
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "SNSPublishAccess"
+      Effect   = "Allow"
+      Action   = ["sns:Publish", "sns:ListTopics"]
+      Resource = [module.auth_notifications_topic.topic_arn]
+    }]
+  })
+}
+
+# ------------------------------------------------------------------------------
+# 9. ECS Platform Module (Cluster, ALB, Shared Components)
+# ------------------------------------------------------------------------------
+module "ecs_platform" {
+  source = "../modules/ecs-platform"
+
+  project_name               = var.project_name
+  environment                = var.environment
+  vpc_id                     = module.networking.vpc_id
+  vpc_cidr                   = module.networking.vpc_cidr
+  public_subnets             = module.networking.public_subnet_ids
+  private_subnets            = module.networking.private_subnet_ids
+  enable_deletion_protection = true  # Staging: Protect shared environment
+  ssl_certificate_arn        = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Required for staging
+}
+
+# ------------------------------------------------------------------------------
+# 10. DocumentDB Module (Shared Database Cluster)
+# ------------------------------------------------------------------------------
+module "documentdb" {
+  source = "../modules/documentdb"
+
+  project_name            = var.project_name
+  environment             = var.environment
+  vpc_id                  = module.networking.vpc_id
+  subnet_ids              = module.networking.private_subnet_ids
+  allowed_security_groups = [module.ecs_platform.ecs_tasks_sg_id]
+  
+  master_username         = "btgadmin"
+  instance_class          = "db.t4g.medium"  # ARM-based (cost-effective for staging)
+  instance_count          = 2                 # Replica set for HA testing
+  backup_retention_days   = 7                 # 7-day retention for staging
+  skip_final_snapshot     = false             # Keep final snapshot
 }
 
 # ==============================================================================
@@ -195,7 +252,7 @@ module "mfe_iam" {
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# 5. Gateway Service (Public ALB)
+# 11. Gateway Service (Public ALB)
 # ------------------------------------------------------------------------------
 module "gateway_service" {
   source = "../modules/ecs-service"
@@ -207,10 +264,17 @@ module "gateway_service" {
   cluster_id       = module.ecs_platform.cluster_id
   service_name     = "gateway-service"
   container_image  = var.gateway_service_image
-  container_port   = 8080
+  container_port   = 8080  # Standard port for all services
   desired_count    = 2
   cpu              = 1024
   memory           = 2048
+  assign_public_ip = var.assign_public_ip
+  
+  # IAM Roles from centralized module
+  # IAM Roles from centralized module
+  # IAM Roles from centralized module
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["gateway-service"]
+  task_role_arn      = null  # No task role needed
   
   # Auto-scaling configuration
   enable_autoscaling       = true
@@ -247,7 +311,7 @@ module "gateway_service" {
 }
 
 # ------------------------------------------------------------------------------
-# 6. Auth Service (Internal ALB)
+# 12. Auth Service (Internal ALB)
 # ------------------------------------------------------------------------------
 module "auth_server" {
   source = "../modules/ecs-service"
@@ -259,10 +323,15 @@ module "auth_server" {
   cluster_id       = module.ecs_platform.cluster_id
   service_name     = "auth-server"
   container_image  = var.auth_service_image
-  container_port   = 8080
+  container_port   = 8080  # Standard port for all services
   desired_count    = 2
-  cpu              = 512
-  memory           = 1024
+  cpu              = 1024
+  memory           = 2048
+  assign_public_ip = var.assign_public_ip
+  
+  # IAM Roles from centralized module
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["auth-server"]
+  task_role_arn      = module.iam.ecs_task_role_arns["auth-server"]  # For SNS access
   
   # Auto-scaling configuration
   enable_autoscaling       = true
@@ -287,6 +356,10 @@ module "auth_server" {
     {
       name  = "MONGODB_HOST"
       value = module.documentdb.endpoint
+    },
+    {
+      name  = "SNS_TOPIC_ARN"
+      value = module.auth_notifications_topic.topic_arn
     }
   ]
   
@@ -299,7 +372,7 @@ module "auth_server" {
 }
 
 # ------------------------------------------------------------------------------
-# 7. Score-Odd Service (Internal ALB)
+# 13. Score-Odd Service (Internal ALB)
 # ------------------------------------------------------------------------------
 module "score_odd_service" {
   source = "../modules/ecs-service"
@@ -311,10 +384,15 @@ module "score_odd_service" {
   cluster_id       = module.ecs_platform.cluster_id
   service_name     = "score-odd-service"
   container_image  = var.score_odd_service_image
-  container_port   = 8080
+  container_port   = 8080  # Standard port for all services
   desired_count    = 2
   cpu              = 1024
   memory           = 2048
+  assign_public_ip = var.assign_public_ip
+  
+  # IAM Roles from centralized module
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["score-odd-service"]
+  task_role_arn      = null  # No task role needed
   
   # Auto-scaling configuration
   enable_autoscaling       = true
@@ -351,7 +429,7 @@ module "score_odd_service" {
 }
 
 # ------------------------------------------------------------------------------
-# 8. Enhancer Service (Internal ALB)
+# 14. Enhancer Service (Internal ALB)
 # ------------------------------------------------------------------------------
 module "enhancer_service" {
   source = "../modules/ecs-service"
@@ -363,6 +441,15 @@ module "enhancer_service" {
   cluster_id       = module.ecs_platform.cluster_id
   service_name     = "enhancer-service"
   container_image  = var.enhancer_service_image
+  container_port   = 8080  # Standard port for all services
+  desired_count    = 2
+  cpu              = 1024
+  memory           = 2048
+  assign_public_ip = var.assign_public_ip
+  
+  # IAM Roles from centralized module
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["enhancer-service"]
+  task_role_arn      = null  # No task role needed
   container_port   = 8080
   desired_count    = 2
   cpu              = 1024  # I/O + CPU intensive workload
@@ -470,5 +557,6 @@ output "cloudfront_url" {
 }
 
 output "github_actions_role_arn" {
-  value = module.mfe_iam.github_actions_role_arn
+  description = "GitHub Actions OIDC role ARN for MFE deployment"
+  value       = module.iam.github_actions_role_arn
 }
