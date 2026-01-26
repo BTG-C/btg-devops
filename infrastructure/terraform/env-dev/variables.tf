@@ -89,3 +89,14 @@ variable "enhancer_service_image" {
   type        = string
   default     = "public.ecr.aws/docker/library/nginx:alpine"
 }
+
+# ==============================================================================
+# SNS Configuration
+# ==============================================================================
+
+variable "sns_admin_emails" {
+  description = "List of admin emails to subscribe to SNS topics (optional, for testing)"
+  type        = list(string)
+  default     = []
+  # Example: ["admin@puntedge.com", "devops@puntedge.com"]
+}

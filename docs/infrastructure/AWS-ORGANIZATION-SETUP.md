@@ -67,8 +67,10 @@ Root Account (Management Account)
 
 ### Required Items
 
-- ✅ **Root AWS Account:** Existing AWS account to become management account
+- ✅ **Root AWS Account:** You should already have an AWS root account from initial signup (created when you first signed up for AWS). This will become your management account.
 - ✅ **Email Addresses:** Unique email per member account (use `+` aliases: `aws+dev@company.com`)
+  - For startups/small teams: Use `+` aliases (e.g., `aws+dev@company.com`) - all emails go to one inbox
+  - For enterprises: Use separate mailboxes (e.g., `aws-dev@company.com`) - better governance and access control
 - ✅ **Domain:** Company domain for email addresses
 - ✅ **Credit Card:** Valid payment method on root account
 - ✅ **MFA Device:** Hardware or virtual MFA for root user

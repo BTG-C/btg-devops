@@ -47,28 +47,9 @@ resource "aws_lb_listener_rule" "main" {
   }
 }
 
-# 4. IAM Roles
-resource "aws_iam_role" "ecs_task_execution_role" {
-  name = "${var.project_name}-${var.environment}-${var.service_name}-execution-role"
- 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
- 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
+# 4. IAM Roles (Managed Externally)
+# Note: IAM roles are created in the centralized 'modules/iam' and passed via variables
+# This module only uses the role ARNs for task definition
 
 # 5. Task Definition
 resource "aws_ecs_task_definition" "main" {
@@ -77,7 +58,8 @@ resource "aws_ecs_task_definition" "main" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.cpu
   memory                   = var.memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  execution_role_arn       = var.execution_role_arn
+  task_role_arn            = var.task_role_arn
 
   container_definitions = jsonencode([
     {
@@ -104,30 +86,7 @@ resource "aws_ecs_task_definition" "main" {
   ])
 }
 
-# 6. IAM Policy for Secrets Access
-resource "aws_iam_role_policy" "task_execution_secrets" {
-  name = "${var.project_name}-${var.environment}-${var.service_name}-secrets"
-  role = aws_iam_role.ecs_task_execution_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "ssm:GetParameters"
-        ]
-        Resource = concat(
-          [for secret in var.secrets : secret.valueFrom],
-          ["arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/${var.environment}/*"]
-        )
-      }
-    ]
-  })
-}
-
-# 7. ECS Service
+# 6. ECS Service
 resource "aws_ecs_service" "main" {
   name            = "${var.project_name}-${var.environment}-${var.service_name}"
   cluster         = var.cluster_id

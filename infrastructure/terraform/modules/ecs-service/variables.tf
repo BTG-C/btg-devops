@@ -138,3 +138,18 @@ variable "autoscaling_memory_target" {
   type        = number
   default     = 80
 }
+
+# ==============================================================================
+# IAM Role ARNs (Managed Externally)
+# ==============================================================================
+
+variable "execution_role_arn" {
+  description = "ARN of the ECS task execution role (from centralized IAM module)"
+  type        = string
+}
+
+variable "task_role_arn" {
+  description = "ARN of the ECS task role for application permissions (optional, from centralized IAM module)"
+  type        = string
+  default     = null
+}

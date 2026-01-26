@@ -79,6 +79,7 @@ provider "aws" {
 #   - Internet Gateway (for public subnet internet access)
 #   - NAT Gateway: DISABLED in dev (cost optimization, ECS tasks use public IPs)
 # Cost Savings: No NAT Gateway saves $33/month in dev
+# Dependencies: None
 # ------------------------------------------------------------------------------
 module "networking" {
   source = "../modules/networking"
@@ -90,12 +91,33 @@ module "networking" {
 }
 
 # ------------------------------------------------------------------------------
-# 2. ACM Certificate (SSL/TLS) - Optional
+# 2. MFE S3 Bucket (Frontend Asset Storage)
+# ------------------------------------------------------------------------------
+# Creates:
+#   - S3 bucket for hosting MFE bundles (Shell, Enhancer, etc.)
+#   - Versioning enabled (rollback capability)
+#   - Server-side encryption (AES-256)
+#   - Lifecycle policy: Delete old versions after 7 days (dev)
+#   - Public access blocked (CloudFront-only access via OAI)
+# Cost: ~$1-5/month depending on storage and data transfer
+# Dependencies: None
+# ------------------------------------------------------------------------------
+module "mfe_s3" {
+  source = "../modules/mfe-s3"
+  
+  project_name   = var.project_name
+  environment    = var.environment
+  retention_days = 7  # Dev: shorter retention
+}
+
+# ------------------------------------------------------------------------------
+# 3. ACM Certificate (SSL/TLS) - Optional
 # ------------------------------------------------------------------------------
 # Creates SSL/TLS certificate for custom domain (e.g., dev.btg.puntedge.com)
 # Uses DNS validation via Route 53
 # Certificate is used by Public ALB for HTTPS termination
 # Dev Default: Disabled (enable_custom_domain = false) to save costs
+# Dependencies: data.aws_route53_zone (external)
 # ------------------------------------------------------------------------------
 module "acm_certificate" {
   count  = var.enable_custom_domain ? 1 : 0
@@ -112,78 +134,7 @@ module "acm_certificate" {
 }
 
 # ------------------------------------------------------------------------------
-# 3. ECS Platform Module (Cluster, ALB, Shared Components)
-# ------------------------------------------------------------------------------
-# Creates:
-#   - ECS Fargate Cluster (serverless container orchestration)
-#   - Public ALB (for gateway service - internet-facing)
-#   - Internal ALB (for auth, score-odd, enhancer - VPC-only)
-#   - Security Groups (ALB -> ECS tasks access control)
-#   - CloudWatch Container Insights (monitoring)
-# Dependencies: Requires networking module (VPC, subnets)
-# ------------------------------------------------------------------------------
-module "ecs_platform" {
-  source = "../modules/ecs-platform"
-
-  project_name           = var.project_name
-  environment            = var.environment
-  vpc_id                 = module.networking.vpc_id
-  vpc_cidr               = module.networking.vpc_cidr
-  public_subnets         = module.networking.public_subnet_ids
-  private_subnets        = module.networking.private_subnet_ids
-  ssl_certificate_arn    = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Optional for dev
-}
-
-# ------------------------------------------------------------------------------
-# 4. DocumentDB Module (MongoDB-Compatible Database)
-# ------------------------------------------------------------------------------
-# Creates:
-#   - DocumentDB cluster (MongoDB 5.0 compatible)
-#   - Single instance: db.t4g.medium (ARM-based, cost-optimized)
-#   - Master password stored in AWS Secrets Manager
-#   - TLS encryption enabled for connections
-#   - Automated backups: 1-day retention (dev only)
-# Security: Only accessible from ECS tasks security group
-# IMPORTANT: Must come AFTER ecs_platform to reference ecs_tasks_sg_id
-# Cost: ~$60/month (single node, minimal for dev)
-# ------------------------------------------------------------------------------
-module "documentdb" {
-  source = "../modules/documentdb"
-
-  project_name            = var.project_name
-  environment             = var.environment
-  vpc_id                  = module.networking.vpc_id
-  subnet_ids              = module.networking.private_subnet_ids
-  allowed_security_groups = [module.ecs_platform.ecs_tasks_sg_id]
-  
-  master_username         = "btgadmin"
-  instance_class          = "db.t4g.medium"      # ARM-based (cheaper)
-  instance_count          = 1                     # Single node for dev (saves $55/month)
-  backup_retention_days   = 1                     # 1-day retention for dev
-  skip_final_snapshot     = true                  # Dev only - prod should be false
-}
-
-# ------------------------------------------------------------------------------
-# 5. MFE S3 Bucket (Frontend Asset Storage)
-# ------------------------------------------------------------------------------
-# Creates:
-#   - S3 bucket for hosting MFE bundles (Shell, Enhancer, etc.)
-#   - Versioning enabled (rollback capability)
-#   - Server-side encryption (AES-256)
-#   - Lifecycle policy: Delete old versions after 7 days (dev)
-#   - Public access blocked (CloudFront-only access via OAI)
-# Cost: ~$1-5/month depending on storage and data transfer
-# ------------------------------------------------------------------------------
-module "mfe_s3" {
-  source = "../modules/mfe-s3"
-  
-  project_name   = var.project_name
-  environment    = var.environment
-  retention_days = 7  # Dev: shorter retention
-}
-
-# ------------------------------------------------------------------------------
-# 6. MFE CloudFront Distribution (CDN)
+# 4. MFE CloudFront Distribution (CDN)
 # ------------------------------------------------------------------------------
 # Creates:
 #   - CloudFront distribution (global CDN)
@@ -193,6 +144,7 @@ module "mfe_s3" {
 #   - Custom domain support (optional, disabled in dev by default)
 # Access: CloudFront URL (e.g., d1234567890.cloudfront.net)
 # Cost: ~$5-10/month (low traffic dev environment)
+# Dependencies: mfe_s3, acm_certificate (optional)
 # ------------------------------------------------------------------------------
 module "mfe_cloudfront" {
   source = "../modules/mfe-cloudfront"
@@ -208,13 +160,14 @@ module "mfe_cloudfront" {
 }
 
 # ------------------------------------------------------------------------------
-# 7. Route53 DNS Records - Optional
+# 5. Route53 DNS Records - Optional
 # ------------------------------------------------------------------------------
 # Creates:
 #   - A record pointing subdomain to CloudFront (e.g., dev.btg.puntedge.com)
 #   - Uses existing Route 53 hosted zone (must be created manually)
 # Dev Default: Disabled (enable_custom_domain = false)
 # Enable when: Ready to use custom domain instead of CloudFront URL
+# Dependencies: mfe_cloudfront
 # ------------------------------------------------------------------------------
 module "route53" {
   count  = var.enable_custom_domain ? 1 : 0
@@ -232,23 +185,148 @@ module "route53" {
 }
 
 # ------------------------------------------------------------------------------
-# 8. MFE IAM (GitHub Actions OIDC)
+# 6. Centralized IAM Module
+# ------------------------------------------------------------------------------
+# Purpose: Manage all IAM roles and policies in one place
+# Creates:
+#   - ECS Task Execution Roles (4 services)
+#   - ECS Task Roles (application permissions)
+#   - GitHub Actions OIDC Role (MFE deployment)
+# Benefits: Single source of truth, easier auditing, reusable roles
+# Dependencies: mfe_s3, mfe_cloudfront (for GitHub Actions OIDC)
+# Note: SNS permissions will be added separately to avoid circular dependency
+# ------------------------------------------------------------------------------
+module "iam" {
+  source = "../modules/iam"
+  
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+  
+  # ECS Services IAM Configuration
+  ecs_services = {
+    "gateway-service" = {
+      enable_task_role = false  # No AWS SDK calls needed
+    }
+    "auth-server" = {
+      enable_task_role = true
+      enable_sns       = false  # Will be added via separate policy below
+    }
+    "score-odd-service" = {
+      enable_task_role = false  # Only uses DocumentDB
+    }
+    "enhancer-service" = {
+      enable_task_role = false  # Only uses DocumentDB
+    }
+  }
+  
+  # GitHub Actions OIDC - Now safe to reference (mfe_s3 and mfe_cloudfront created above)
+  enable_github_actions            = true
+  github_repo                      = var.github_repo
+  mfe_s3_bucket_arn                = module.mfe_s3.bucket_arn
+  mfe_cloudfront_distribution_arn  = module.mfe_cloudfront.distribution_arn
+}
+
+# ------------------------------------------------------------------------------
+# 7. SNS Topics for Notifications
+# ------------------------------------------------------------------------------
+# Authentication notifications topic (for auth-service)
+# Used for: User registration, password resets, MFA, login alerts
+# Dependencies: None
+# ------------------------------------------------------------------------------
+module "auth_notifications_topic" {
+  source = "../modules/sns"
+  
+  project_name = var.project_name
+  environment  = var.environment
+  topic_name   = "auth-notifications"
+  display_name = "BTG Auth Service Notifications"
+  purpose      = "User authentication events and notifications"
+  
+  # Optional: Subscribe admin email for testing
+  email_subscriptions = var.sns_admin_emails
+  
+  # Enable encryption
+  enable_encryption = true
+}
+
+# ------------------------------------------------------------------------------
+# 7a. Auth Service SNS Permissions (Separate Policy)
+# ------------------------------------------------------------------------------
+# Purpose: Add SNS permissions to auth-server task role after SNS topic is created
+# This solves the circular dependency (IAM needs SNS ARN, but SNS created after IAM)
+# Dependencies: iam (task role), auth_notifications_topic
+# ------------------------------------------------------------------------------
+resource "aws_iam_role_policy" "auth_server_sns" {
+  name = "${var.project_name}-${var.environment}-auth-server-sns-publish"
+  role = module.iam.ecs_task_role_names["auth-server"]
+  
+  depends_on = [
+    module.iam,
+    module.auth_notifications_topic
+  ]
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "SNSPublishAccess"
+      Effect   = "Allow"
+      Action   = ["sns:Publish", "sns:ListTopics"]
+      Resource = [module.auth_notifications_topic.topic_arn]
+    }]
+  })
+}
+
+# ------------------------------------------------------------------------------
+# 8. ECS Platform Module (Cluster, ALB, Shared Components)
 # ------------------------------------------------------------------------------
 # Creates:
-#   - IAM role for GitHub Actions (passwordless authentication via OIDC)
-#   - Policies: S3 upload, CloudFront invalidation
-#   - Trust relationship: Allows only repos matching pattern (btg-*-mfe)
-# Used by: GitHub Actions workflows to deploy MFE bundles
-# Security: No static credentials, uses temporary tokens via OIDC
+#   - ECS Fargate Cluster (serverless container orchestration)
+#   - Public ALB (for gateway service - internet-facing)
+#   - Internal ALB (for auth, score-odd, enhancer - VPC-only)
+#   - Security Groups (ALB -> ECS tasks access control)
+#   - CloudWatch Container Insights (monitoring)
+# Dependencies: networking
 # ------------------------------------------------------------------------------
-module "mfe_iam" {
-  source = "../modules/mfe-iam"
+module "ecs_platform" {
+  source = "../modules/ecs-platform"
+
+  project_name           = var.project_name
+  environment            = var.environment
+  vpc_id                 = module.networking.vpc_id
+  vpc_cidr               = module.networking.vpc_cidr
+  public_subnets         = module.networking.public_subnet_ids
+  private_subnets        = module.networking.private_subnet_ids
+  ssl_certificate_arn    = var.enable_custom_domain ? module.acm_certificate[0].certificate_arn : ""  # Optional for dev
+}
+
+# ------------------------------------------------------------------------------
+# 9. DocumentDB Module (MongoDB-Compatible Database)
+# ------------------------------------------------------------------------------
+# Creates:
+#   - DocumentDB cluster (MongoDB 5.0 compatible)
+#   - Single instance: db.t4g.medium (ARM-based, cost-optimized)
+#   - Master password stored in AWS Secrets Manager
+#   - TLS encryption enabled for connections
+#   - Automated backups: 1-day retention (dev only)
+# Security: Only accessible from ECS tasks security group
+# Cost: ~$60/month (single node, minimal for dev)
+# Dependencies: networking, ecs_platform (for security group)
+# ------------------------------------------------------------------------------
+module "documentdb" {
+  source = "../modules/documentdb"
+
+  project_name            = var.project_name
+  environment             = var.environment
+  vpc_id                  = module.networking.vpc_id
+  subnet_ids              = module.networking.private_subnet_ids
+  allowed_security_groups = [module.ecs_platform.ecs_tasks_sg_id]
   
-  project_name                = var.project_name
-  environment                 = var.environment
-  github_repo                 = var.github_repo
-  s3_bucket_arn               = module.mfe_s3.bucket_arn
-  cloudfront_distribution_arn = module.mfe_cloudfront.distribution_arn
+  master_username         = "btgadmin"
+  instance_class          = "db.t4g.medium"      # ARM-based (cheaper)
+  instance_count          = 1                     # Single node for dev (saves $55/month)
+  backup_retention_days   = 1                     # 1-day retention for dev
+  skip_final_snapshot     = true                  # Dev only - prod should be false
 }
 
 # ------------------------------------------------------------------------------
@@ -279,6 +357,10 @@ module "gateway_service" {
   cpu              = 256
   memory           = 512
   assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  
+  # IAM Roles from centralized IAM module
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["gateway-service"]
+  task_role_arn      = null  # No task role needed (no AWS SDK calls)
   
   # Auto-scaling configuration
   enable_autoscaling       = false
@@ -323,6 +405,7 @@ module "gateway_service" {
 #   - Memory: 512 MB
 #   - Desired Count: 1 task (no auto-scaling in dev)
 #   - Public IP: Enabled (required since NAT Gateway disabled)
+#   - SNS Access: Enabled for sending notifications (registration, password reset, etc.)
 # Routing: Internal ALB -> /auth-server/* -> This service
 # Security: Accessible only from within VPC (other services)
 # Cost: ~$11/month
@@ -342,6 +425,10 @@ module "auth_service" {
   cpu              = 256
   memory           = 512
   assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  
+  # IAM Roles from centralized IAM module (with SNS permissions)
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["auth-server"]
+  task_role_arn      = module.iam.ecs_task_role_arns["auth-server"]
   
   # Auto-scaling configuration
   enable_autoscaling       = false
@@ -366,6 +453,14 @@ module "auth_service" {
     {
       name  = "MONGODB_HOST"
       value = module.documentdb.endpoint
+    },
+    {
+      name  = "SNS_TOPIC_ARN"
+      value = module.auth_notifications_topic.topic_arn
+    },
+    {
+      name  = "AWS_REGION"
+      value = var.aws_region
     }
   ]
   
@@ -405,6 +500,10 @@ module "score_odd_service" {
   cpu              = 256
   memory           = 512
   assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  
+  # IAM Roles from centralized IAM module
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["score-odd-service"]
+  task_role_arn      = null  # No task role needed (only DocumentDB)
   
   # Auto-scaling configuration
   enable_autoscaling       = false
@@ -468,6 +567,10 @@ module "enhancer_service" {
   cpu              = 256   # Dev: Reduced for cost optimization
   memory           = 512   # Dev: Reduced for cost optimization
   assign_public_ip = true  # Dev: No NAT Gateway, requires public IP for internet access
+  
+  # IAM Roles from centralized IAM module
+  execution_role_arn = module.iam.ecs_task_execution_role_arns["enhancer-service"]
+  task_role_arn      = null  # No task role needed (only DocumentDB)
   
   # Auto-scaling configuration
   enable_autoscaling       = false
@@ -583,7 +686,7 @@ output "cloudfront_url" {
 
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions"
-  value       = module.mfe_iam.github_actions_role_arn
+  value       = module.iam.github_actions_role_arn
 }
 
 output "certificate_arn" {
@@ -599,4 +702,14 @@ output "custom_domain_url" {
 output "dns_name_servers" {
   description = "Route 53 name servers (for domain verification)"
   value       = var.enable_custom_domain ? one(data.aws_route53_zone.main[*].name_servers) : []
+}
+
+output "sns_auth_topic_arn" {
+  description = "ARN of the auth notifications SNS topic"
+  value       = module.auth_notifications_topic.topic_arn
+}
+
+output "iam_summary" {
+  description = "Summary of IAM roles created"
+  value       = module.iam.iam_summary
 }
