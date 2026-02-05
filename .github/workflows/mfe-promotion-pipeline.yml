@@ -65,6 +65,9 @@ jobs:
       # ========================================================================
       # Setup
       # ========================================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set variables
         id: vars
         run: |
@@ -187,6 +190,7 @@ jobs:
       - name: Deploy to S3
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+          APP_NAME: ${{ steps.vars.outputs.app_name }}
         run: |
           echo "☁️ Deploying to S3: ${S3_BUCKET}"
           
@@ -194,31 +198,39 @@ jobs:
           # SAFE DEPLOYMENT STRATEGY (Shared Bucket)
           # ====================================================================
           
-          # 1. Handle Sub-directories (mfe-bundles, assets) - Scoped Sync
-          # Syncs 'deploy/assets/shell' -> 's3://.../assets/shell' with --delete
-          for dir in "mfe-bundles" "assets"; do
-            if [ -d "deploy/$dir" ]; then
-              # Sync Directories (Recursive with --delete)
-              find "deploy/$dir" -mindepth 1 -maxdepth 1 -type d | while read sub_dir; do
+          # 1. Handle mfe-bundles (Strict Ownership - Sync with Delete)
+          if [ -d "deploy/mfe-bundles" ]; then
+             echo "Syncing mfe-bundles with delete..."
+             find "deploy/mfe-bundles" -mindepth 1 -maxdepth 1 -type d | while read sub_dir; do
                 relative_path="${sub_dir#deploy/}"
-                echo "Syncing subdirectory: $relative_path"
                 aws s3 sync "$sub_dir" "s3://${S3_BUCKET}/$relative_path" \
                   --delete \
                   --cache-control "public,max-age=31536000,immutable" \
                   --exclude "*/remoteEntry.json"
-              done
+             done
+          fi
 
-              # Sync Files at root of these folders (e.g., assets/favicon.ico) - Copy Only (No Delete)
-              find "deploy/$dir" -maxdepth 1 -type f | while read file; do
-                relative_path="${file#deploy/}"
-                echo "Copying file: $relative_path"
-                aws s3 cp "$file" "s3://${S3_BUCKET}/$relative_path" \
-                    --cache-control "public,max-age=31536000,immutable"
-              done
-            fi
-          done
+          # 2. Handle assets
+          if [ -d "deploy/assets" ]; then
+             # A. App-Specific Assets (e.g., assets/shell/) -> Strict Sync (Delete)
+             # Keeps the specific folder clean of old files
+             if [ -d "deploy/assets/${APP_NAME}" ]; then
+                 echo "Syncing ${APP_NAME} specific assets (Strict)..."
+                 aws s3 sync "deploy/assets/${APP_NAME}" "s3://${S3_BUCKET}/assets/${APP_NAME}" \
+                  --delete \
+                  --cache-control "public,max-age=31536000,immutable"
+             fi
 
-          # 2. Handle Root Files (Shell Bundles) - Copy Only
+             # B. Shared/Design System Assets -> Additive Sync (No Delete)
+             # Syncs fonts, icons, logo from node_modules that live in root assets/
+             # Excludes the specific folder we just handled
+             echo "Syncing shared design system assets (Additive)..."
+             aws s3 sync "deploy/assets" "s3://${S3_BUCKET}/assets" \
+              --exclude "${APP_NAME}/*" \
+              --cache-control "public,max-age=31536000,immutable"
+          fi
+
+          # 3. Handle Root Files (Shell Bundles) - Copy Only
           # Avoid 'sync --delete' at root to prevent wiping other MFEs
           # Copy all root files (e.g. favicon.ico) excluding explicit no-cache files.
           find deploy -maxdepth 1 -type f | while read file; do
@@ -242,13 +254,13 @@ jobs:
              aws s3 cp "$file" "s3://${S3_BUCKET}/$fname" --cache-control "$CACHE_CONTROL"
           done
 
-          # 3. Deploy index.html (No Cache)
+          # 4. Deploy index.html (No Cache)
           if [ -f "deploy/index.html" ]; then
             aws s3 cp deploy/index.html s3://${S3_BUCKET}/index.html \
               --cache-control "no-cache,no-store,must-revalidate"
           fi
           
-          # 4. Deploy config (No Cache)
+          # 5. Deploy config (No Cache)
           # Note: Runtime config already deployed in previous step for shell-mfe
           # This handles any config/ folder in the artifact itself
           if [ -d "deploy/config" ]; then
@@ -256,7 +268,7 @@ jobs:
               --cache-control "no-cache,no-store,must-revalidate"
           fi
           
-          # 5. Update remoteEntry.json (No Cache) - Universal
+          # 6. Update remoteEntry.json (No Cache) - Universal
           find deploy -name "remoteEntry.json" | while read file; do
             s3_path="${file#deploy/}"
             aws s3 cp "$file" "s3://${S3_BUCKET}/${s3_path}" \
@@ -269,21 +281,20 @@ jobs:
       - name: Invalidate CloudFront
         env:
           DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+          APP_NAME: ${{ steps.vars.outputs.app_name }}
         run: |
           echo "🔄 Invalidating CloudFront..."
           
-          INVALIDATION_ID=$(aws cloudfront create-invalidation \
-            --distribution-id ${DISTRIBUTION_ID} \
-            --paths "/*" "/config/config.json" \
-            --query 'Invalidation.Id' \
-            --output text)
+          # Avoid "Cache Dumping" anti-pattern by invalidating only what changed
+          if [ "$APP_NAME" == "shell" ]; then
+             PATHS="/index.html /remoteEntry.json /config/config.json /favicon.ico /robots.txt /manifest.json /assets/shell/*"
+          else
+             PATHS="/mfe-bundles/${APP_NAME}/remoteEntry.json /assets/${APP_NAME}/*"
+          fi
           
-          echo "✅ Invalidation created: ${INVALIDATION_ID}"
-          
-          # Wait for completion (with timeout)
-          timeout 300 aws cloudfront wait invalidation-completed \
+          aws cloudfront create-invalidation \
             --distribution-id ${DISTRIBUTION_ID} \
-            --id ${INVALIDATION_ID} || echo "⚠️ Invalidation still in progress"
+            --paths $PATHS
       
       # ========================================================================
       # Validate Deployment
