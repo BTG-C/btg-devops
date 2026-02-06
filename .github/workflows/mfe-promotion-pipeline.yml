@@ -312,8 +312,20 @@ jobs:
           # Wait for CloudFront to propagate
           sleep 10
           
-          # Test HTTP 200
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${CLOUDFRONT_URL})
+          # Test HTTP 200 (Follow redirects with -L)
+          # CloudFront often redirects HTTP -> HTTPS (301)
+          # If CLOUDFRONT_URL is defined as 'd123.cloudfront.net' (without protocol), curl assumes HTTP
+          
+          TARGET_URL="${CLOUDFRONT_URL}"
+          if [[ "${TARGET_URL}" != http* ]]; then
+             TARGET_URL="https://${TARGET_URL}"
+          fi
+          
+          echo "Testing: ${TARGET_URL}"
+          
+          HTTP_STATUS=$(curl -s -L -o /dev/null -w "%{http_code}" "${TARGET_URL}")
+          
+          # Accept 200 (OK)
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "❌ Smoke test failed: HTTP ${HTTP_STATUS}"
             exit 1
