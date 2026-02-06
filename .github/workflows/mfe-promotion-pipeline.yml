@@ -312,26 +312,34 @@ jobs:
           # Wait for CloudFront to propagate
           sleep 10
           
-          # Test HTTP 200 (Follow redirects with -L)
-          # CloudFront often redirects HTTP -> HTTPS (301)
-          # If CLOUDFRONT_URL is defined as 'd123.cloudfront.net' (without protocol), curl assumes HTTP
-          
+          # Force HTTPS and Follow Redirects (-L)
           TARGET_URL="${CLOUDFRONT_URL}"
+          
+          # Prepend https:// if missing
           if [[ "${TARGET_URL}" != http* ]]; then
              TARGET_URL="https://${TARGET_URL}"
           fi
           
-          echo "Testing: ${TARGET_URL}"
+          echo "Checking URL: ${TARGET_URL}"
+
+          # APPEND /index.html explicitly to avoid 403 on root if Default Root Object is misconfigured
+          CHECK_URL="${TARGET_URL}/index.html"
+          # Fix double slashes if any
+          CHECK_URL="${CHECK_URL//\/\//\/}"
+          CHECK_URL="${CHECK_URL/https:\//https:\/\/}"
+
+          echo "Hitting explicit file: ${CHECK_URL}"
           
-          HTTP_STATUS=$(curl -s -L -o /dev/null -w "%{http_code}" "${TARGET_URL}")
+          HTTP_STATUS=$(curl -s -L -o /dev/null -w "%{http_code}" "${CHECK_URL}")
           
-          # Accept 200 (OK)
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "❌ Smoke test failed: HTTP ${HTTP_STATUS}"
+            echo "💡 If 403: Verify S3 Block Public Access + CloudFront OAC/OAI settings."
+            echo "💡 If 403: Ensure 'index.html' exists and CloudFront has Default Root Object set."
             exit 1
           fi
           
-          echo "✅ Smoke test passed"
+          echo "✅ Smoke test passed (HTTP $HTTP_STATUS)"
       
       # ========================================================================
       # Summary
