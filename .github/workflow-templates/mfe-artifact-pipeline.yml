@@ -87,9 +87,17 @@ jobs:
           BUILD_VERSION="${GITHUB_SHA:0:7}-$(date +%Y%m%d-%H%M%S)"
           echo "build-version=${BUILD_VERSION}" >> $GITHUB_OUTPUT
           
-          # Find dist folder
-          BUILD_DIR=$(find dist -maxdepth 2 -type d -name browser -o -type d -name "btg-*-mfe" | head -1)
-          [ -z "$BUILD_DIR" ] && BUILD_DIR="dist"
+          # Find dist folder (Prioritize 'browser' folder for Angular 17+ Application builder)
+          # Adapts to standard Angular (dist/project/browser) or custom setups
+          if [ -d "dist/btg-${{ env.APP_NAME }}-mfe/browser" ]; then
+            BUILD_DIR="dist/btg-${{ env.APP_NAME }}-mfe/browser"
+          elif [ -d "dist/browser" ]; then
+             BUILD_DIR="dist/browser"
+          else
+             # Fallback to fuzzy search
+             BUILD_DIR=$(find dist -maxdepth 2 -type d -name browser -o -type d -name "btg-*-mfe" | head -1)
+             [ -z "$BUILD_DIR" ] && BUILD_DIR="dist"
+          fi
           
           echo "📦 Packaging: ${BUILD_DIR}"
           tar -czf btg-${{ env.APP_NAME }}-mfe-${BUILD_VERSION}.tar.gz -C ${BUILD_DIR} .
@@ -116,7 +124,8 @@ jobs:
         env:
           BUILD_VERSION: ${{ steps.create-artifact.outputs.build-version }}
         run: |
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository_owner }}/btg-${{ env.APP_NAME }}-mfe"
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="${{ env.REGISTRY }}/${OWNER}/btg-${{ env.APP_NAME }}-mfe"
           
           # Create Dockerfile
           cat > Dockerfile <<EOF
@@ -150,13 +159,14 @@ jobs:
           BUILD_VERSION: ${{ steps.create-artifact.outputs.build-version }}
           TARGET_ENV: ${{ steps.determine-env.outputs.environment }}
         run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "### 🚀 Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**App:** ${{ env.APP_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${BUILD_VERSION}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** ${GITHUB_REF_NAME}" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${TARGET_ENV}" >> $GITHUB_STEP_SUMMARY
-          echo "**Package:** ghcr.io/${{ github.repository_owner }}/btg-${{ env.APP_NAME }}-mfe:${BUILD_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** ghcr.io/${OWNER}/btg-${{ env.APP_NAME }}-mfe:${BUILD_VERSION}" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # Job 2: Trigger Deployment in btg-devops Repo
