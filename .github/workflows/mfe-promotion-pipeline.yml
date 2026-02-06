@@ -120,8 +120,10 @@ jobs:
           fi
           
           # Extract artifact
-          # Note: We must specify a command (e.g., 'sh') because 'scratch' images have no default CMD
-          CONTAINER_ID=$(docker create ${IMAGE_NAME} sh)
+          # Use 'docker create' to instantiate the container without starting it.
+          # We pass a dummy command ('/nop') because 'scratch' images have no default CMD.
+          # This avoids "no command specified" error.
+          CONTAINER_ID=$(docker create ${IMAGE_NAME} /nop)
           docker cp ${CONTAINER_ID}:/artifact.tar.gz ./artifact.tar.gz || exit 1
           docker cp ${CONTAINER_ID}:/metadata.json ./metadata.json || exit 1
           docker rm ${CONTAINER_ID}

@@ -132,6 +132,8 @@ jobs:
           FROM scratch
           COPY btg-${{ env.APP_NAME }}-mfe-${BUILD_VERSION}.tar.gz /artifact.tar.gz
           COPY build-metadata.json /metadata.json
+          # Add dummy CMD to ensure 'docker create' succeeds without arguments
+          CMD ["/metadata.json"]
           EOF
           
           # Build and push
