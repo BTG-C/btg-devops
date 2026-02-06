@@ -102,7 +102,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.DEVOPS_REPO_TOKEN }}
       
       - name: Pull artifact
         id: pull
